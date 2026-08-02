@@ -1,0 +1,22 @@
+# Normalize line endings.
+#
+# `core.autocrlf=true` is set locally, which would otherwise check files out as
+# CRLF on Windows. Prettier is configured with `endOfLine: "lf"`, so a CRLF
+# working tree makes `pnpm format:check` fail on every file after a fresh clone.
+# `eol=lf` pins the working-tree ending regardless of each developer's git config.
+* text=auto eol=lf
+
+# Generated: keep it out of diffs and out of language statistics.
+pnpm-lock.yaml linguist-generated=true -diff
+
+# Binary assets — never convert, never diff as text.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.woff binary
+*.woff2 binary
+*.pdf binary
+*.zip binary

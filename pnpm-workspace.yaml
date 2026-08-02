@@ -1,0 +1,13 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# pnpm blocks dependency build scripts unless they are named here.
+# Each of these compiles or downloads a native binary it genuinely needs:
+#   esbuild  -> bundler used by vite/vitest/tsx
+#   workerd  -> the Cloudflare Workers runtime that `wrangler dev` executes
+#   sharp    -> Next.js image optimization
+allowBuilds:
+  esbuild: true
+  sharp: true
+  workerd: true

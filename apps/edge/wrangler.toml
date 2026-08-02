@@ -1,0 +1,24 @@
+# Cloudflare Worker configuration.
+#
+# SECRETS DO NOT BELONG IN THIS FILE — it is committed. Set them with:
+#   wrangler secret put INTERNAL_API_TOKEN
+# Values here are non-sensitive configuration only.
+
+name = "urlgen-edge"
+main = "src/index.ts"
+compatibility_date = "2026-08-01"
+
+# Placeholder ids. Create the namespace with:
+#   wrangler kv namespace create LINKS
+#   wrangler kv namespace create LINKS --preview
+# then paste the returned ids here. Namespace ids are not secrets.
+[[kv_namespaces]]
+binding = "LINKS"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
+preview_id = "REPLACE_WITH_PREVIEW_KV_NAMESPACE_ID"
+
+[vars]
+ORIGIN_API_BASE = "http://127.0.0.1:3001"
+
+[observability]
+enabled = true

@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "./packages/config/tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "noEmit": true
+  },
+  /* Root-level tooling files only. Each app and package has its own tsconfig;
+     without this, ESLint's type-aware rules cannot resolve these files at all. */
+  "include": ["vitest.config.ts"]
+}

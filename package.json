@@ -1,0 +1,39 @@
+{
+  "name": "urlgen",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Edge URL shortener with real-time analytics",
+  "packageManager": "pnpm@11.18.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "pnpm -r --parallel typecheck",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "build": "pnpm -r build",
+    "dev:api": "pnpm --filter @urlgen/api dev",
+    "dev:edge": "pnpm --filter @urlgen/edge dev",
+    "dev:web": "pnpm --filter @urlgen/web dev",
+    "services:up": "docker compose up -d",
+    "services:down": "docker compose down",
+    "verify": "pnpm lint && pnpm typecheck && pnpm test"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "26.1.2",
+    "@vitest/coverage-v8": "4.1.10",
+    "eslint": "10.8.0",
+    "eslint-config-prettier": "10.1.8",
+    "globals": "17.8.0",
+    "prettier": "3.9.6",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.65.0",
+    "vitest": "4.1.10"
+  }
+}

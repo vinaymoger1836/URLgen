@@ -1,0 +1,11 @@
+node_modules
+dist
+build
+coverage
+.next
+.wrangler
+pnpm-lock.yaml
+
+# Local-only project docs — hand-formatted tables that Prettier would reflow.
+CLAUDE.md
+INTERVIEW_CHEATSHEET.md

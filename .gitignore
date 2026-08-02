@@ -1,0 +1,68 @@
+# ---------------------------------------------------------------------------
+# Secrets — MUST stay out of git. Verify this file exists before any `git add`.
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+.dev.vars
+.dev.vars.*
+*.pem
+*.key
+*.p12
+*.pfx
+*.p8
+.aws/
+credentials
+# Terraform / IaC state can embed resolved secrets.
+*.tfvars
+*.tfstate
+*.tfstate.*
+
+# ---------------------------------------------------------------------------
+# Dependencies & build output
+# ---------------------------------------------------------------------------
+node_modules/
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# Next.js
+.next/
+.vercel/
+
+# Cloudflare Wrangler
+.wrangler/
+
+# ---------------------------------------------------------------------------
+# Test / tooling caches
+# ---------------------------------------------------------------------------
+coverage/
+.vitest/
+.eslintcache
+.turbo/
+
+# ---------------------------------------------------------------------------
+# Local data volumes (docker compose bind mounts)
+# ---------------------------------------------------------------------------
+.data/
+
+# ---------------------------------------------------------------------------
+# Project docs kept local only
+# ---------------------------------------------------------------------------
+CLAUDE.md
+INTERVIEW_CHEATSHEET.md
+# Machine-local tool settings (may record local paths and permissions).
+.claude/settings.local.json
+
+# ---------------------------------------------------------------------------
+# OS / editor noise
+# ---------------------------------------------------------------------------
+Thumbs.db
+Desktop.ini
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.log
+npm-debug.log*

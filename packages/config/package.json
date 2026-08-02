@@ -1,0 +1,13 @@
+{
+  "name": "@urlgen/config",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared TypeScript configuration for the URLGen workspace",
+  "files": [
+    "tsconfig.base.json"
+  ],
+  "scripts": {
+    "typecheck": "echo \"no sources to typecheck\""
+  }
+}

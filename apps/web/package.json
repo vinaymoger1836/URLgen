@@ -1,0 +1,26 @@
+{
+  "name": "@urlgen/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Next.js dashboard — link management and analytics",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@urlgen/shared": "workspace:*",
+    "next": "16.2.12",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@types/node": "26.1.2",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
+    "@urlgen/config": "workspace:*",
+    "typescript": "5.9.3"
+  }
+}
