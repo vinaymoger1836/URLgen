@@ -4,7 +4,6 @@
 
 `dynamodb-table.json` is a literal `CreateTable` input — no comments, so it works
 directly with the AWS CLI (which rejects unknown parameters).
-
 ```bash
 # DynamoDB Local (docker compose up -d first)
 aws dynamodb create-table --cli-input-json file://infra/dynamodb-table.json \
