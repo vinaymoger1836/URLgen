@@ -10,6 +10,23 @@ import Fastify, { type FastifyInstance, type FastifyServerOptions } from "fastif
 import { ZodError } from "zod";
 
 import type { Config } from "./config.js";
+import { createDocumentClient } from "./repositories/dynamo-client.js";
+import { DynamoLinkRepository } from "./repositories/dynamo-link-repository.js";
+import type { LinkRepository } from "./repositories/link-repository.js";
+import { registerInternalRoutes } from "./routes/internal.js";
+import { registerLinkRoutes } from "./routes/links.js";
+import { SafeBrowsingClient, type UrlSafetyChecker } from "./services/safe-browsing.js";
+
+/**
+ * Collaborators the server needs.
+ *
+ * Injectable so tests can supply an in-memory repository and a stub safety
+ * checker; unset entries fall back to the real DynamoDB and Safe Browsing wiring.
+ */
+export interface ServerDependencies {
+  linkRepository: LinkRepository;
+  urlSafetyChecker: UrlSafetyChecker;
+}
 
 /** Headers that may carry a credential and must never reach the logs. */
 const REDACTED_HEADERS = [
@@ -19,7 +36,10 @@ const REDACTED_HEADERS = [
   'req.headers["cf-connecting-ip"]',
 ];
 
-export function buildServer(config: Config): FastifyInstance {
+export function buildServer(
+  config: Config,
+  overrides: Partial<ServerDependencies> = {},
+): FastifyInstance {
   const app = Fastify({
     logger: buildLoggerOptions(config),
     /* Cloudflare terminates the client connection, so the real client details
@@ -34,6 +54,27 @@ export function buildServer(config: Config): FastifyInstance {
     environment: config.NODE_ENV,
     uptimeSeconds: Math.round(process.uptime()),
   }));
+
+  const repository =
+    overrides.linkRepository ??
+    new DynamoLinkRepository({
+      client: createDocumentClient(config),
+      tableName: config.DYNAMODB_TABLE,
+    });
+
+  const safetyChecker =
+    overrides.urlSafetyChecker ??
+    new SafeBrowsingClient({
+      ...(config.SAFE_BROWSING_API_KEY !== undefined
+        ? { apiKey: config.SAFE_BROWSING_API_KEY }
+        : {}),
+      onError: (error) => {
+        app.log.warn({ err: error }, "safe browsing lookup failed — allowing the url");
+      },
+    });
+
+  registerLinkRoutes(app, { config, repository, safetyChecker });
+  registerInternalRoutes(app, { config, repository });
 
   app.setNotFoundHandler((request, reply) => {
     void reply

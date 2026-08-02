@@ -1,0 +1,45 @@
+{
+  "TableName": "urlgen-links",
+  "BillingMode": "PROVISIONED",
+  "ProvisionedThroughput": {
+    "ReadCapacityUnits": 11,
+    "WriteCapacityUnits": 11
+  },
+  "AttributeDefinitions": [
+    { "AttributeName": "pk", "AttributeType": "S" },
+    { "AttributeName": "sk", "AttributeType": "S" },
+    { "AttributeName": "gsi1pk", "AttributeType": "S" },
+    { "AttributeName": "gsi2pk", "AttributeType": "S" },
+    { "AttributeName": "gsi2sk", "AttributeType": "S" }
+  ],
+  "KeySchema": [
+    { "AttributeName": "pk", "KeyType": "HASH" },
+    { "AttributeName": "sk", "KeyType": "RANGE" }
+  ],
+  "GlobalSecondaryIndexes": [
+    {
+      "IndexName": "urlHash-index",
+      "KeySchema": [{ "AttributeName": "gsi1pk", "KeyType": "HASH" }],
+      "Projection": { "ProjectionType": "KEYS_ONLY" },
+      "ProvisionedThroughput": {
+        "ReadCapacityUnits": 7,
+        "WriteCapacityUnits": 7
+      }
+    },
+    {
+      "IndexName": "owner-index",
+      "KeySchema": [
+        { "AttributeName": "gsi2pk", "KeyType": "HASH" },
+        { "AttributeName": "gsi2sk", "KeyType": "RANGE" }
+      ],
+      "Projection": {
+        "ProjectionType": "INCLUDE",
+        "NonKeyAttributes": ["targetUrl", "status", "expiresAt", "clickCount"]
+      },
+      "ProvisionedThroughput": {
+        "ReadCapacityUnits": 7,
+        "WriteCapacityUnits": 7
+      }
+    }
+  ]
+}

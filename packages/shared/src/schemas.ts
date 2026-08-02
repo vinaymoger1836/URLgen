@@ -62,7 +62,12 @@ export const timestampSchema = z
   .string()
   .refine((value) => !Number.isNaN(Date.parse(value)), "must be an ISO-8601 timestamp");
 
-export const linkStatusSchema = z.enum(["active", "disabled", "expired"]);
+/**
+ * `disabled` is an administrative action (abuse), `deleted` is the owner removing
+ * their own link. Both are soft — the row stays so the slug is never recycled and
+ * historical analytics keep resolving.
+ */
+export const linkStatusSchema = z.enum(["active", "disabled", "expired", "deleted"]);
 
 export const createLinkRequestSchema = z.object({
   url: targetUrlSchema,
@@ -76,9 +81,27 @@ export const linkRecordSchema = z.object({
   ownerId: z.string(),
   status: linkStatusSchema,
   createdAt: timestampSchema,
+  updatedAt: timestampSchema,
   expiresAt: timestampSchema.optional(),
   urlHash: z.string(),
+  clickCount: z.number().int().nonnegative(),
+  /** Set when the target hostname is internationalized — surfaced for abuse review. */
+  punycode: z.boolean().optional(),
 });
+
+/** What the API returns to a caller: the record minus internal bookkeeping. */
+export const linkResponseSchema = linkRecordSchema.omit({ urlHash: true });
+
+export const updateLinkRequestSchema = z
+  .object({
+    url: targetUrlSchema.optional(),
+    expiresAt: timestampSchema.nullable().optional(),
+    status: z.enum(["active", "disabled"]).optional(),
+  })
+  .refine(
+    (patch) => Object.values(patch).some((value) => value !== undefined),
+    "at least one field must be provided",
+  );
 
 /**
  * The compact blob stored in Workers KV.
@@ -97,6 +120,8 @@ export const kvLinkValueSchema = z.object({
 });
 
 export type CreateLinkRequest = z.infer<typeof createLinkRequestSchema>;
+export type UpdateLinkRequest = z.infer<typeof updateLinkRequestSchema>;
 export type LinkRecord = z.infer<typeof linkRecordSchema>;
+export type LinkResponse = z.infer<typeof linkResponseSchema>;
 export type LinkStatus = z.infer<typeof linkStatusSchema>;
 export type KvLinkValue = z.infer<typeof kvLinkValueSchema>;

@@ -10,9 +10,12 @@
     "start": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
     "build": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "table:create": "tsx scripts/create-table.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-dynamodb": "3.1101.0",
+    "@aws-sdk/lib-dynamodb": "3.1101.0",
     "@urlgen/shared": "workspace:*",
     "fastify": "5.11.0",
     "zod": "4.4.3"
