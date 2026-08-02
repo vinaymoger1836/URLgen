@@ -54,6 +54,7 @@ CLAUDE.md
 INTERVIEW_CHEATSHEET.md
 # Machine-local tool settings (may record local paths and permissions).
 .claude/settings.local.json
+.claude/
 
 # ---------------------------------------------------------------------------
 # OS / editor noise

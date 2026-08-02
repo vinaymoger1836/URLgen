@@ -20,7 +20,9 @@ function jsonResponse(body: unknown, status = 200): Response {
  * into nonsense, so responses are always constructed per invocation.
  */
 function respondWith(body: unknown, status = 200) {
-  return vi.fn<typeof fetch>().mockImplementation(() => Promise.resolve(jsonResponse(body, status)));
+  return vi
+    .fn<typeof fetch>()
+    .mockImplementation(() => Promise.resolve(jsonResponse(body, status)));
 }
 
 describe("SafeBrowsingClient", () => {
@@ -34,36 +36,36 @@ describe("SafeBrowsingClient", () => {
   });
 
   it("reports a clean URL as safe", async () => {
-    const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({}));
+    const fetchFn = respondWith({});
     const client = new SafeBrowsingClient({ apiKey: API_KEY, fetchFn });
 
     await expect(client.check("https://example.com/")).resolves.toBe("safe");
   });
 
   it("reports a threat match as malicious", async () => {
-    const fetchFn = vi
-      .fn<typeof fetch>()
-      .mockResolvedValue(jsonResponse({ matches: [{ threatType: "MALWARE" }] }));
+    const fetchFn = respondWith({ matches: [{ threatType: "MALWARE" }] });
     const client = new SafeBrowsingClient({ apiKey: API_KEY, fetchFn });
 
     await expect(client.check("https://malware.example/")).resolves.toBe("malicious");
   });
 
   it("treats an empty matches array as safe", async () => {
-    const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({ matches: [] }));
+    const fetchFn = respondWith({ matches: [] });
     const client = new SafeBrowsingClient({ apiKey: API_KEY, fetchFn });
 
     await expect(client.check("https://example.com/")).resolves.toBe("safe");
   });
 
   it("sends the URL in the documented request shape", async () => {
-    const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({}));
+    const fetchFn = respondWith({});
     const client = new SafeBrowsingClient({ apiKey: API_KEY, fetchFn });
 
     await client.check("https://example.com/path");
 
     const [, init] = fetchFn.mock.calls[0] ?? [];
-    const body: unknown = JSON.parse(String(init?.body));
+    const sent = init?.body;
+    expect(typeof sent).toBe("string");
+    const body: unknown = JSON.parse(typeof sent === "string" ? sent : "{}");
     expect(body).toMatchObject({
       threatInfo: { threatEntries: [{ url: "https://example.com/path" }] },
     });
@@ -71,7 +73,7 @@ describe("SafeBrowsingClient", () => {
 
   describe("fail-open behaviour", () => {
     it("returns unknown on a non-200 rather than blocking the create", async () => {
-      const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({}, 429));
+      const fetchFn = respondWith({}, 429);
       const client = new SafeBrowsingClient({ apiKey: API_KEY, fetchFn });
 
       await expect(client.check("https://example.com/")).resolves.toBe("unknown");
@@ -85,7 +87,9 @@ describe("SafeBrowsingClient", () => {
     });
 
     it("returns unknown when the body is not valid JSON", async () => {
-      const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(new Response("<html>oops</html>"));
+      const fetchFn = vi
+        .fn<typeof fetch>()
+        .mockImplementation(() => Promise.resolve(new Response("<html>oops</html>")));
       const client = new SafeBrowsingClient({ apiKey: API_KEY, fetchFn });
 
       await expect(client.check("https://example.com/")).resolves.toBe("unknown");
@@ -104,7 +108,7 @@ describe("SafeBrowsingClient", () => {
 
   describe("caching", () => {
     it("looks a URL up once and reuses the verdict", async () => {
-      const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({}));
+      const fetchFn = respondWith({});
       const client = new SafeBrowsingClient({ apiKey: API_KEY, fetchFn });
 
       await client.check("https://example.com/");
@@ -118,7 +122,7 @@ describe("SafeBrowsingClient", () => {
       const fetchFn = vi
         .fn<typeof fetch>()
         .mockRejectedValueOnce(new Error("timeout"))
-        .mockResolvedValue(jsonResponse({}));
+        .mockImplementation(() => Promise.resolve(jsonResponse({})));
       const client = new SafeBrowsingClient({ apiKey: API_KEY, fetchFn });
 
       await expect(client.check("https://example.com/")).resolves.toBe("unknown");
@@ -129,7 +133,7 @@ describe("SafeBrowsingClient", () => {
     it("expires a cached verdict after its TTL", async () => {
       vi.useFakeTimers();
       try {
-        const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({}));
+        const fetchFn = respondWith({});
         const client = new SafeBrowsingClient({ apiKey: API_KEY, fetchFn, cacheTtlMs: 1000 });
 
         await client.check("https://example.com/");
@@ -143,7 +147,7 @@ describe("SafeBrowsingClient", () => {
     });
 
     it("bounds the cache so a long-lived process cannot grow without limit", async () => {
-      const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({}));
+      const fetchFn = respondWith({});
       const client = new SafeBrowsingClient({ apiKey: API_KEY, fetchFn, maxCacheEntries: 2 });
 
       await client.check("https://a.example/");

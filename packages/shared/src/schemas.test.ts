@@ -95,7 +95,7 @@ describe("kvLinkValueSchema", () => {
   });
 
   it("rejects an unknown status or a non-positive expiry", () => {
-    expect(kvLinkValueSchema.safeParse({ u: "https://e.com", s: "deleted" }).success).toBe(false);
+    expect(kvLinkValueSchema.safeParse({ u: "https://e.com", s: "removed" }).success).toBe(false);
     expect(kvLinkValueSchema.safeParse({ u: "https://e.com", s: "active", e: 0 }).success).toBe(
       false,
     );

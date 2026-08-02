@@ -6,8 +6,8 @@ Redirects are served from Cloudflare's edge network without touching the origin 
 cache hit, and every click is recorded asynchronously into a columnar analytics store
 so tracking never sits on the redirect's critical path.
 
-> **Status: Phase 0 of 6 — foundations.** The monorepo, shared primitives, and tooling
-> are in place and verified. Link creation, edge resolution, and analytics are not
+> **Status: Phase 1 of 6.** Link creation, URL safety validation, deduplication and the
+> internal resolve endpoint are built and tested. Edge resolution and analytics are not
 > implemented yet. See [Roadmap](#roadmap). Nothing here is deployed.
 
 ---
@@ -103,15 +103,15 @@ cannot leave one service behind.
 
 ## Roadmap
 
-| Phase | Scope                                                     | Status      |
-| ----- | --------------------------------------------------------- | ----------- |
-| 0     | Monorepo, tooling, shared primitives                      | ✅ Complete |
-| 1     | Link CRUD, DynamoDB, URL safety validation, deduplication | Not started |
-| 2     | Edge redirect: KV lookup, origin fallback, write-back     | Not started |
-| 3     | Async click tracking → Redis buffer → ClickHouse          | Not started |
-| 4     | Analytics dashboard with geo and device insights          | Not started |
-| 5     | Rate limiting, abuse handling, security hardening         | Not started |
-| 6     | CI/CD, deployment, load testing                           | Not started |
+| Phase | Scope                                                     | Status                             |
+| ----- | --------------------------------------------------------- | ---------------------------------- |
+| 0     | Monorepo, tooling, shared primitives                      | ✅ Complete                        |
+| 1     | Link CRUD, DynamoDB, URL safety validation, deduplication | ✅ Built — integration run pending |
+| 2     | Edge redirect: KV lookup, origin fallback, write-back     | Not started                        |
+| 3     | Async click tracking → Redis buffer → ClickHouse          | Not started                        |
+| 4     | Analytics dashboard with geo and device insights          | Not started                        |
+| 5     | Rate limiting, abuse handling, security hardening         | Not started                        |
+| 6     | CI/CD, deployment, load testing                           | Not started                        |
 
 Latency claims are deliberately unquantified until Phase 2, where they get measured.
 
@@ -123,6 +123,15 @@ Latency claims are deliberately unquantified until Phase 2, where they get measu
 pnpm test
 ```
 
-72 tests currently cover the shared primitives (base62 round-tripping and sampling
-uniformity, slug rules, URL canonicalization, dedup hashing) and the API's configuration
-loader and server wiring.
+175 tests cover the shared primitives (base62 round-tripping and sampling uniformity, slug
+rules, URL canonicalization, dedup hashing, non-routable-address classification), the API's
+configuration loader, link routes with a hostile-URL suite, the Safe Browsing client, and
+the DynamoDB repository's slug-allocation retry logic.
+
+DynamoDB integration tests are skipped unless a real endpoint is available:
+
+```bash
+pnpm services:up
+pnpm table:create
+DYNAMODB_TEST_ENDPOINT=http://127.0.0.1:8000 pnpm test
+```

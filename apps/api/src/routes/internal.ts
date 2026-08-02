@@ -63,9 +63,6 @@ export function registerInternalRoutes(app: FastifyInstance, options: InternalRo
       ...(record.expiresAt !== undefined ? { e: Date.parse(record.expiresAt) } : {}),
     };
 
-    return reply
-      .header("cache-control", "no-store")
-      .code(200)
-      .send(value);
+    return reply.header("cache-control", "no-store").code(200).send(value);
   });
 }

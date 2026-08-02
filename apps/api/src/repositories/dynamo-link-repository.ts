@@ -118,7 +118,7 @@ export class DynamoLinkRepository implements LinkRepository {
     }
 
     /* GSI1 is KEYS_ONLY, so the slug comes back inside the partition key. */
-    const pk: unknown = item["pk"];
+    const pk: unknown = item.pk;
     return typeof pk === "string" ? pk.replace(/^LINK#/, "") : undefined;
   }
 
@@ -194,9 +194,7 @@ export class DynamoLinkRepository implements LinkRepository {
    * exists so integration tests can clean up after themselves.
    */
   public async hardDelete(slug: string): Promise<void> {
-    await this.#client.send(
-      new DeleteCommand({ TableName: this.#tableName, Key: keyFor(slug) }),
-    );
+    await this.#client.send(new DeleteCommand({ TableName: this.#tableName, Key: keyFor(slug) }));
   }
 
   public async listByOwner(ownerId: string, options: ListLinksOptions = {}): Promise<LinkPage> {
@@ -211,7 +209,9 @@ export class DynamoLinkRepository implements LinkRepository {
         /* Newest first — gsi2sk is the ISO createdAt, which sorts lexicographically. */
         ScanIndexForward: false,
         Limit: limit,
-        ...(options.cursor !== undefined ? { ExclusiveStartKey: decodeCursor(options.cursor) } : {}),
+        ...(options.cursor !== undefined
+          ? { ExclusiveStartKey: decodeCursor(options.cursor) }
+          : {}),
       }),
     );
 

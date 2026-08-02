@@ -26,12 +26,12 @@ The DynamoDB always-free tier is **25 RCU + 25 WCU for the entire account**, and
 **every GSI is provisioned separately on top of the table**. Putting 25/25 on the
 table and both indexes would provision 75/75 and start billing immediately.
 
-| Component | RCU | WCU |
-|---|---|---|
-| Table | 11 | 11 |
-| `urlHash-index` (GSI1) | 7 | 7 |
-| `owner-index` (GSI2) | 7 | 7 |
-| **Total** | **25** | **25** |
+| Component              | RCU    | WCU    |
+| ---------------------- | ------ | ------ |
+| Table                  | 11     | 11     |
+| `urlHash-index` (GSI1) | 7      | 7      |
+| `owner-index` (GSI2)   | 7      | 7      |
+| **Total**              | **25** | **25** |
 
 Reads skew low deliberately: redirects are served from Workers KV and never reach
 DynamoDB on a cache hit, so table reads are cache misses and dashboard queries only.
@@ -39,15 +39,15 @@ DynamoDB on a cache hit, so table reads are cache misses and dashboard queries o
 Two further consequences of the free tier being account-wide:
 
 - **On-demand billing is not covered.** The always-free allowance applies to
-  *provisioned* capacity, which is why `BillingMode` is `PROVISIONED`.
+  _provisioned_ capacity, which is why `BillingMode` is `PROVISIONED`.
 - **Any other DynamoDB table on the same account eats the same 25/25.**
 
 ### Single-table design
 
-| Access pattern | Key |
-|---|---|
-| Resolve a slug (the only hot read) | `pk = LINK#<slug>`, `sk = META` |
-| Deduplicate on create | GSI1 `gsi1pk = HASH#<urlHash>` |
+| Access pattern                      | Key                                                  |
+| ----------------------------------- | ---------------------------------------------------- |
+| Resolve a slug (the only hot read)  | `pk = LINK#<slug>`, `sk = META`                      |
+| Deduplicate on create               | GSI1 `gsi1pk = HASH#<urlHash>`                       |
 | List an owner's links, newest first | GSI2 `gsi2pk = USER#<ownerId>`, `gsi2sk = createdAt` |
 
 **GSI1 is `KEYS_ONLY`** — the slug is recoverable from `pk` (`LINK#<slug>`), so

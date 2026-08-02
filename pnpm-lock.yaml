@@ -63,6 +63,9 @@ importers:
       '@urlgen/config':
         specifier: workspace:*
         version: link:../../packages/config
+      light-my-request:
+        specifier: 6.6.0
+        version: 6.6.0
       pino-pretty:
         specifier: 13.1.3
         version: 13.1.3

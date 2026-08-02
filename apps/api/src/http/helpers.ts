@@ -46,7 +46,10 @@ export function secretsMatch(provided: string, expected: string): boolean {
 }
 
 /** True when the link has an expiry that has already passed. */
-export function isExpired(record: Pick<LinkRecord, "expiresAt">, now: number = Date.now()): boolean {
+export function isExpired(
+  record: Pick<LinkRecord, "expiresAt">,
+  now: number = Date.now(),
+): boolean {
   return record.expiresAt !== undefined && Date.parse(record.expiresAt) <= now;
 }
 

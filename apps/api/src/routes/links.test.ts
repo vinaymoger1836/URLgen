@@ -34,7 +34,7 @@ afterEach(async () => {
   await app.close();
 });
 
-function createLink(body: unknown, ownerId = "alice") {
+function createLink(body: Record<string, unknown>, ownerId = "alice") {
   return app.inject({
     method: "POST",
     url: "/api/links",
@@ -96,7 +96,7 @@ describe("POST /api/links", () => {
   });
 
   describe("hostile input", () => {
-    const cases: ReadonlyArray<readonly [string, string, number]> = [
+    const cases: readonly (readonly [string, string, number])[] = [
       ["javascript:alert(1)", "unsupported_protocol", 400],
       ["data:text/html;base64,PHNjcmlwdD4=", "unsupported_protocol", 400],
       ["file:///etc/passwd", "unsupported_protocol", 400],

@@ -87,20 +87,23 @@ export class SafeBrowsingClient implements UrlSafetyChecker {
   }
 
   async #lookup(url: string): Promise<SafeBrowsingVerdict> {
-    const response = await this.#fetch(`${ENDPOINT}?key=${encodeURIComponent(this.#apiKey ?? "")}`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        client: { clientId: "urlgen", clientVersion: "0.1.0" },
-        threatInfo: {
-          threatTypes: THREAT_TYPES,
-          platformTypes: ["ANY_PLATFORM"],
-          threatEntryTypes: ["URL"],
-          threatEntries: [{ url }],
-        },
-      }),
-      signal: AbortSignal.timeout(this.#timeoutMs),
-    });
+    const response = await this.#fetch(
+      `${ENDPOINT}?key=${encodeURIComponent(this.#apiKey ?? "")}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          client: { clientId: "urlgen", clientVersion: "0.1.0" },
+          threatInfo: {
+            threatTypes: THREAT_TYPES,
+            platformTypes: ["ANY_PLATFORM"],
+            threatEntryTypes: ["URL"],
+            threatEntries: [{ url }],
+          },
+        }),
+        signal: AbortSignal.timeout(this.#timeoutMs),
+      },
+    );
 
     if (!response.ok) {
       throw new Error(`Safe Browsing responded ${String(response.status)}`);

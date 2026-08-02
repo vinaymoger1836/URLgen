@@ -56,16 +56,16 @@ describe("toItem", () => {
   it("derives the primary key and both index keys", () => {
     const item = toItem(RECORD);
 
-    expect(item["pk"]).toBe("LINK#abc1234");
-    expect(item["sk"]).toBe("META");
-    expect(item["gsi1pk"]).toBe("HASH#deadbeef");
-    expect(item["gsi2pk"]).toBe("USER#alice");
-    expect(item["gsi2sk"]).toBe(RECORD.createdAt);
+    expect(item.pk).toBe("LINK#abc1234");
+    expect(item.sk).toBe("META");
+    expect(item.gsi1pk).toBe("HASH#deadbeef");
+    expect(item.gsi2pk).toBe("USER#alice");
+    expect(item.gsi2sk).toBe(RECORD.createdAt);
   });
 
   it("adds ttl only when the link expires", () => {
-    expect(toItem(RECORD)["ttl"]).toBeUndefined();
-    expect(toItem({ ...RECORD, expiresAt: "2030-01-01T00:00:00.000Z" })["ttl"]).toBe(
+    expect(toItem(RECORD).ttl).toBeUndefined();
+    expect(toItem({ ...RECORD, expiresAt: "2030-01-01T00:00:00.000Z" }).ttl).toBe(
       toTtlSeconds("2030-01-01T00:00:00.000Z"),
     );
   });
@@ -105,7 +105,7 @@ describe("slug allocation", () => {
     await repository.create(input);
 
     const command = send.mock.calls[0]?.[0] as { input: Record<string, unknown> };
-    expect(command.input["ConditionExpression"]).toBe("attribute_not_exists(pk)");
+    expect(command.input.ConditionExpression).toBe("attribute_not_exists(pk)");
   });
 
   it("draws a new slug when the conditional write loses the race", async () => {

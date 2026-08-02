@@ -91,7 +91,7 @@ export function registerLinkRoutes(app: FastifyInstance, options: LinkRoutesOpti
     const existingSlug = await repository.findSlugByUrlHash(urlHash);
     if (existingSlug !== undefined) {
       const existing = await repository.findBySlug(existingSlug);
-      if (existing !== undefined && existing.status === "active" && !isExpired(existing)) {
+      if (existing?.status === "active" && !isExpired(existing)) {
         return reply.code(200).send({
           ...toResponse(existing),
           shortUrl: shortUrlFor(config.SHORT_DOMAIN, existing.slug),
@@ -266,7 +266,7 @@ async function loadOwnedLink(
     return undefined;
   }
   const record = await repository.findBySlug(slug);
-  if (record === undefined || record.ownerId !== ownerId || record.status === "deleted") {
+  if (record?.ownerId !== ownerId || record.status === "deleted") {
     return undefined;
   }
   return record;
