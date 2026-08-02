@@ -101,22 +101,6 @@ cannot leave one service behind.
 
 ---
 
-## Roadmap
-
-| Phase | Scope                                                     | Status                             |
-| ----- | --------------------------------------------------------- | ---------------------------------- |
-| 0     | Monorepo, tooling, shared primitives                      | ✅ Complete                        |
-| 1     | Link CRUD, DynamoDB, URL safety validation, deduplication | ✅ Built — integration run pending |
-| 2     | Edge redirect: KV lookup, origin fallback, write-back     | Not started                        |
-| 3     | Async click tracking → Redis buffer → ClickHouse          | Not started                        |
-| 4     | Analytics dashboard with geo and device insights          | Not started                        |
-| 5     | Rate limiting, abuse handling, security hardening         | Not started                        |
-| 6     | CI/CD, deployment, load testing                           | Not started                        |
-
-Latency claims are deliberately unquantified until Phase 2, where they get measured.
-
----
-
 ## Tests
 
 ```bash
