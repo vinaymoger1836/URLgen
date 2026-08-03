@@ -112,6 +112,27 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): Config {
 }
 
 /**
+ * Treats a blank value as an unset variable.
+ *
+ * A `.env` file has no way to say "absent" — the convention is to leave the value
+ * empty, and `.env.example` ships blank AWS credential lines on purpose because
+ * DynamoDB Local needs none. Without this, merely loading that template would turn
+ * every optional secret into a hard validation failure. Blanks are dropped rather
+ * than coerced so `.optional()` and `.default()` still mean what they say, and a
+ * blank required secret in production still fails — with "is required" instead of
+ * a confusing length complaint.
+ */
+function withoutBlanks(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const cleaned: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(source)) {
+    if (value !== undefined && value.trim() !== "") {
+      cleaned[key] = value;
+    }
+  }
+  return cleaned;
+}
+
+/**
  * A copy of the config that is safe to log: every secret is replaced by a marker
  * showing only whether it was set.
  */
