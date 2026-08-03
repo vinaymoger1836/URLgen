@@ -4,11 +4,13 @@ import {
   assessUrlSafety,
   createLinkRequestSchema,
   isWellFormedSlug,
+  linkResponseSchema,
   updateLinkRequestSchema,
   urlDedupHash,
   type ErrorCode,
   type LinkRecord,
   type LinkResponse,
+  type LinkSummary,
   type UrlSafetyIssue,
   type UrlSafetyResult,
 } from "@urlgen/shared";
@@ -272,8 +274,14 @@ async function loadOwnedLink(
   return record;
 }
 
-/** Strips internal bookkeeping before a record goes over the wire. */
-function toResponse(record: LinkRecord): LinkResponse {
-  const { urlHash: _urlHash, ...rest } = record;
-  return rest;
+/**
+ * Strips internal bookkeeping before a record goes over the wire.
+ *
+ * Takes a summary too, because a listing is served from a projected index and
+ * never has `urlHash` to begin with. Parsing rather than destructuring means the
+ * strip is enforced by the schema: any future internal field is dropped unless it
+ * is explicitly added to the response shape.
+ */
+function toResponse(record: LinkRecord | LinkSummary): LinkResponse {
+  return linkResponseSchema.parse(record);
 }
