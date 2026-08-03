@@ -34,6 +34,33 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ NODE_ENV: "staging" })).toThrow(ConfigError);
   });
 
+  it("treats a blank value as unset, because that is how .env spells 'absent'", () => {
+    const config = loadConfig({
+      AWS_ACCESS_KEY_ID: "",
+      AWS_SECRET_ACCESS_KEY: "   ",
+      SAFE_BROWSING_API_KEY: "",
+      DYNAMODB_TABLE: "",
+    });
+
+    expect(config.AWS_ACCESS_KEY_ID).toBeUndefined();
+    expect(config.AWS_SECRET_ACCESS_KEY).toBeUndefined();
+    expect(config.SAFE_BROWSING_API_KEY).toBeUndefined();
+    /* A blank falls through to the default rather than overriding it with "". */
+    expect(config.DYNAMODB_TABLE).toBe("urlgen-links");
+  });
+
+  it("still rejects a blank production secret, with the useful error", () => {
+    try {
+      loadConfig({ ...PRODUCTION_ENV, INTERNAL_API_TOKEN: "" });
+      expect.unreachable("a blank production secret must not be accepted");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ConfigError);
+      expect((error as ConfigError).issues).toContain(
+        "INTERNAL_API_TOKEN: INTERNAL_API_TOKEN is required when NODE_ENV=production",
+      );
+    }
+  });
+
   it("requires endpoint overrides to be absolute URLs", () => {
     expect(() => loadConfig({ DYNAMODB_ENDPOINT: "localhost:8000" })).toThrow(ConfigError);
     expect(loadConfig({ DYNAMODB_ENDPOINT: "http://localhost:8000" }).DYNAMODB_ENDPOINT).toBe(
