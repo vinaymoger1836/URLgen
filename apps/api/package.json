@@ -6,12 +6,12 @@
   "description": "Origin API — write path, source of truth, analytics queries",
   "main": "src/index.ts",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "start": "tsx src/index.ts",
+    "dev": "tsx --env-file-if-exists=../../.env watch src/index.ts",
+    "start": "tsx --env-file-if-exists=../../.env src/index.ts",
     "typecheck": "tsc --noEmit",
     "build": "tsc --noEmit",
     "test": "vitest run",
-    "table:create": "tsx scripts/create-table.ts"
+    "table:create": "tsx --env-file-if-exists=../../.env scripts/create-table.ts"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "3.1101.0",
