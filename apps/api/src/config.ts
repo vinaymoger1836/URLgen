@@ -98,7 +98,7 @@ export class ConfigError extends Error {
  * is fixed in a single pass instead of one restart per missing variable.
  */
 export function loadConfig(source: NodeJS.ProcessEnv = process.env): Config {
-  const result = envSchema.safeParse(source);
+  const result = envSchema.safeParse(withoutBlanks(source));
 
   if (!result.success) {
     const issues = result.error.issues.map((issue) => {
