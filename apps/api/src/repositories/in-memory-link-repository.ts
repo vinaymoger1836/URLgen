@@ -105,8 +105,15 @@ export class InMemoryLinkRepository implements LinkRepository {
 
     const limit = options.limit ?? 25;
     const start = options.cursor === undefined ? 0 : Number(options.cursor);
-    const items = owned.slice(start, start + limit);
-    const nextIndex = start + items.length;
+    const page = owned.slice(start, start + limit);
+    const nextIndex = start + page.length;
+
+    /*
+     * Drops `urlHash` to mirror the owner index's INCLUDE projection. Returning
+     * whole records here would let a caller depend on a field DynamoDB never
+     * sends back — which is exactly how that bug reached the integration tests.
+     */
+    const items = page.map(({ urlHash: _urlHash, ...summary }) => summary);
 
     return Promise.resolve({
       items,

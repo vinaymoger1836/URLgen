@@ -6,7 +6,7 @@
  * and other vendor details from leaking into HTTP handling.
  */
 
-import type { LinkRecord, LinkStatus } from "@urlgen/shared";
+import type { LinkRecord, LinkStatus, LinkSummary } from "@urlgen/shared";
 
 export interface CreateLinkInput {
   targetUrl: string;
@@ -33,7 +33,12 @@ export interface ListLinksOptions {
 }
 
 export interface LinkPage {
-  items: LinkRecord[];
+  /**
+   * Summaries, not full records: the listing is served from a projected index
+   * that does not carry `urlHash`. Typing it as `LinkRecord` would promise a
+   * field the storage layer cannot deliver.
+   */
+  items: LinkSummary[];
   cursor?: string;
 }
 

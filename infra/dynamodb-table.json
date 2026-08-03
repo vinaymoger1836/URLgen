@@ -34,7 +34,7 @@
       ],
       "Projection": {
         "ProjectionType": "INCLUDE",
-        "NonKeyAttributes": ["targetUrl", "status", "expiresAt", "clickCount"]
+        "NonKeyAttributes": ["targetUrl", "status", "expiresAt", "clickCount", "updatedAt", "punycode"]
       },
       "ProvisionedThroughput": {
         "ReadCapacityUnits": 7,

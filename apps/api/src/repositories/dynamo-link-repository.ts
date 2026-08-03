@@ -19,7 +19,13 @@ import {
   UpdateCommand,
   type DynamoDBDocumentClient,
 } from "@aws-sdk/lib-dynamodb";
-import { generateSlug, linkRecordSchema, type LinkRecord } from "@urlgen/shared";
+import {
+  generateSlug,
+  linkRecordSchema,
+  linkSummarySchema,
+  type LinkRecord,
+  type LinkSummary,
+} from "@urlgen/shared";
 
 import {
   LinkNotFoundError,
@@ -216,7 +222,7 @@ export class DynamoLinkRepository implements LinkRepository {
     );
 
     return {
-      items: (result.Items ?? []).map((item) => toLinkRecord(item)),
+      items: (result.Items ?? []).map((item) => toLinkSummary(item)),
       ...(result.LastEvaluatedKey !== undefined
         ? { cursor: encodeCursor(result.LastEvaluatedKey) }
         : {}),
@@ -291,6 +297,41 @@ export function toLinkRecord(item: Record<string, unknown>): LinkRecord {
     );
   }
   return parsed.data;
+}
+
+/**
+ * Rebuilds a link summary from an owner-index item.
+ *
+ * A query against `owner-index` returns only the index keys, the table keys, and
+ * the INCLUDE list — not the whole item. `slug`, `ownerId` and `createdAt` are
+ * absent, but each is already present verbatim inside a key that the index
+ * projects for free (`pk`, `gsi2pk`, `gsi2sk`), so they are unwrapped from there
+ * rather than duplicated into the projection at the cost of GSI write capacity.
+ */
+export function toLinkSummary(item: Record<string, unknown>): LinkSummary {
+  const candidate = {
+    ...item,
+    slug: stripPrefix(item["pk"], "LINK#"),
+    ownerId: stripPrefix(item["gsi2pk"], "USER#"),
+    createdAt: item["gsi2sk"],
+  };
+
+  const parsed = linkSummarySchema.safeParse(candidate);
+  if (!parsed.success) {
+    throw new Error(
+      `Owner-index item does not match the expected projection: ${parsed.error.issues
+        .map((issue) => `${issue.path.join(".")} ${issue.message}`)
+        .join("; ")}`,
+    );
+  }
+  return parsed.data;
+}
+
+/** Unwraps the value carried inside a prefixed key, or undefined if the shape is wrong. */
+function stripPrefix(value: unknown, prefix: string): string | undefined {
+  return typeof value === "string" && value.startsWith(prefix)
+    ? value.slice(prefix.length)
+    : undefined;
 }
 
 /** DynamoDB TTL is epoch SECONDS, not milliseconds — milliseconds would be year 56000. */

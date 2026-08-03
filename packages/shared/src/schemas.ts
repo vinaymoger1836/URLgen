@@ -89,8 +89,18 @@ export const linkRecordSchema = z.object({
   punycode: z.boolean().optional(),
 });
 
+/**
+ * A link without its dedup hash.
+ *
+ * This is what a listing can return: the owner index projects only the attributes
+ * the listing reads, and `urlHash` is deliberately not among them — paying GSI
+ * write capacity to carry a hash no query reads would be waste. It is also exactly
+ * what the API hands back, since the hash is internal bookkeeping either way.
+ */
+export const linkSummarySchema = linkRecordSchema.omit({ urlHash: true });
+
 /** What the API returns to a caller: the record minus internal bookkeeping. */
-export const linkResponseSchema = linkRecordSchema.omit({ urlHash: true });
+export const linkResponseSchema = linkSummarySchema;
 
 export const updateLinkRequestSchema = z
   .object({
@@ -122,6 +132,7 @@ export const kvLinkValueSchema = z.object({
 export type CreateLinkRequest = z.infer<typeof createLinkRequestSchema>;
 export type UpdateLinkRequest = z.infer<typeof updateLinkRequestSchema>;
 export type LinkRecord = z.infer<typeof linkRecordSchema>;
+export type LinkSummary = z.infer<typeof linkSummarySchema>;
 export type LinkResponse = z.infer<typeof linkResponseSchema>;
 export type LinkStatus = z.infer<typeof linkStatusSchema>;
 export type KvLinkValue = z.infer<typeof kvLinkValueSchema>;
