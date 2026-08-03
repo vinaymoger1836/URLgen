@@ -7,6 +7,7 @@ import {
   isConditionalCheckFailure,
   toItem,
   toLinkRecord,
+  toLinkSummary,
   toTtlSeconds,
 } from "./dynamo-link-repository.js";
 import { SlugAllocationError, SlugUnavailableError } from "./link-repository.js";
@@ -79,6 +80,44 @@ describe("toLinkRecord", () => {
   it("throws rather than returning a half-populated record when the item is corrupt", () => {
     expect(() => toLinkRecord({ pk: "LINK#x", sk: "META" })).toThrow(/does not match/);
     expect(() => toLinkRecord({ ...toItem(RECORD), status: "bogus" })).toThrow(/does not match/);
+  });
+});
+
+/**
+ * Builds an item exactly as a query against `owner-index` returns it: the table
+ * keys, the index keys, and the INCLUDE list — nothing else. Writing it by hand
+ * rather than deriving it from `toItem` is the point; deriving would reintroduce
+ * the attributes the projection drops and re-hide the bug this guards.
+ */
+function ownerIndexProjection(): Record<string, unknown> {
+  return {
+    pk: `LINK#${RECORD.slug}`,
+    sk: "META",
+    gsi2pk: `USER#${RECORD.ownerId}`,
+    gsi2sk: RECORD.createdAt,
+    targetUrl: RECORD.targetUrl,
+    status: RECORD.status,
+    clickCount: RECORD.clickCount,
+    updatedAt: RECORD.updatedAt,
+  };
+}
+
+describe("toLinkSummary", () => {
+  it("rebuilds slug, ownerId and createdAt from the keys the index projects", () => {
+    const { urlHash: _urlHash, ...expected } = RECORD;
+    expect(toLinkSummary(ownerIndexProjection())).toEqual(expected);
+  });
+
+  it("never carries the dedup hash, which the projection does not include", () => {
+    expect(toLinkSummary(ownerIndexProjection())).not.toHaveProperty("urlHash");
+  });
+
+  it("throws when a key it unwraps is missing or malformed", () => {
+    const { gsi2pk: _gsi2pk, ...noOwner } = ownerIndexProjection();
+    expect(() => toLinkSummary(noOwner)).toThrow(/does not match the expected projection/);
+    expect(() => toLinkSummary({ ...ownerIndexProjection(), pk: RECORD.slug })).toThrow(
+      /does not match the expected projection/,
+    );
   });
 });
 

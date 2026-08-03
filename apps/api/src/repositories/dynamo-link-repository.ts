@@ -311,9 +311,9 @@ export function toLinkRecord(item: Record<string, unknown>): LinkRecord {
 export function toLinkSummary(item: Record<string, unknown>): LinkSummary {
   const candidate = {
     ...item,
-    slug: stripPrefix(item["pk"], "LINK#"),
-    ownerId: stripPrefix(item["gsi2pk"], "USER#"),
-    createdAt: item["gsi2sk"],
+    slug: stripPrefix(item.pk, "LINK#"),
+    ownerId: stripPrefix(item.gsi2pk, "USER#"),
+    createdAt: item.gsi2sk,
   };
 
   const parsed = linkSummarySchema.safeParse(candidate);
