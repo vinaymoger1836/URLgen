@@ -2,10 +2,9 @@ import { env } from "cloudflare:test";
 import { kvLinkKey, type KvLinkValue } from "@urlgen/shared";
 import { describe, expect, it } from "vitest";
 
-import { backstopTtlSeconds, readCachedLink, writeBackLink } from "./kv.js";
+import { readCachedLink, writeBackLink } from "./kv.js";
 
 const NOW = Date.parse("2026-08-06T12:00:00.000Z");
-const WEEK_SECONDS = 7 * 24 * 60 * 60;
 
 let counter = 0;
 /** A slug no other test in this file is using, so writes cannot leak between cases. */
@@ -13,34 +12,6 @@ function uniqueSlug(): string {
   counter += 1;
   return `kvt${counter.toString().padStart(4, "0")}`;
 }
-
-describe("backstopTtlSeconds", () => {
-  it("gives a never-expiring link the full backstop", () => {
-    expect(backstopTtlSeconds({ u: "https://example.com/", s: "active" }, NOW)).toBe(WEEK_SECONDS);
-  });
-
-  it("shortens the TTL to the link's own expiry when that comes first", () => {
-    const value: KvLinkValue = { u: "https://example.com/", s: "active", e: NOW + 3600_000 };
-    expect(backstopTtlSeconds(value, NOW)).toBe(3600);
-  });
-
-  it("keeps the backstop when the expiry is further out than a week", () => {
-    const value: KvLinkValue = { u: "https://example.com/", s: "active", e: NOW + 30 * 86_400_000 };
-    expect(backstopTtlSeconds(value, NOW)).toBe(WEEK_SECONDS);
-  });
-
-  it("declines to cache a link expiring inside KV's 60s TTL floor", () => {
-    /* KV rejects an expirationTtl under 60 seconds, and spending one of the day's
-       1000 writes on an entry that is about to be wrong is worse than a miss. */
-    const value: KvLinkValue = { u: "https://example.com/", s: "active", e: NOW + 59_000 };
-    expect(backstopTtlSeconds(value, NOW)).toBeUndefined();
-  });
-
-  it("declines to cache an already-expired link", () => {
-    const value: KvLinkValue = { u: "https://example.com/", s: "active", e: NOW - 1 };
-    expect(backstopTtlSeconds(value, NOW)).toBeUndefined();
-  });
-});
 
 describe("readCachedLink", () => {
   it("returns undefined for a key that was never written", () => {

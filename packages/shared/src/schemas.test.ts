@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { createLinkRequestSchema, kvLinkValueSchema, targetUrlSchema } from "./schemas.js";
+import {
+  createLinkRequestSchema,
+  kvBackstopTtlSeconds,
+  kvLinkKey,
+  kvLinkValueSchema,
+  targetUrlSchema,
+  type KvLinkValue,
+} from "./schemas.js";
 
 function messagesFor(input: unknown): string[] {
   const result = createLinkRequestSchema.safeParse(input);
@@ -99,5 +106,46 @@ describe("kvLinkValueSchema", () => {
     expect(kvLinkValueSchema.safeParse({ u: "https://e.com", s: "active", e: 0 }).success).toBe(
       false,
     );
+  });
+});
+
+describe("kvLinkKey", () => {
+  it("namespaces the slug so other key families can share the namespace", () => {
+    expect(kvLinkKey("abc1234")).toBe("l:abc1234");
+  });
+});
+
+describe("kvBackstopTtlSeconds", () => {
+  const NOW = Date.parse("2026-08-06T12:00:00.000Z");
+  const WEEK = 7 * 24 * 60 * 60;
+
+  function value(overrides: Partial<KvLinkValue> = {}): KvLinkValue {
+    return { u: "https://example.com/", s: "active", ...overrides };
+  }
+
+  it("gives a never-expiring link the full backstop", () => {
+    expect(kvBackstopTtlSeconds(value(), NOW)).toBe(WEEK);
+  });
+
+  it("shortens the TTL to the link's own expiry when that comes first", () => {
+    expect(kvBackstopTtlSeconds(value({ e: NOW + 3_600_000 }), NOW)).toBe(3600);
+  });
+
+  it("keeps the backstop when the expiry is further out than a week", () => {
+    expect(kvBackstopTtlSeconds(value({ e: NOW + 30 * 86_400_000 }), NOW)).toBe(WEEK);
+  });
+
+  it("declines to cache a link expiring inside KV's 60s floor", () => {
+    /* KV rejects an expirationTtl under 60 seconds, and spending one of the day's
+       1000 writes on an entry about to be wrong is worse than letting it miss. */
+    expect(kvBackstopTtlSeconds(value({ e: NOW + 59_000 }), NOW)).toBeUndefined();
+  });
+
+  it("accepts an expiry exactly at the floor", () => {
+    expect(kvBackstopTtlSeconds(value({ e: NOW + 60_000 }), NOW)).toBe(60);
+  });
+
+  it("declines to cache an already-expired link", () => {
+    expect(kvBackstopTtlSeconds(value({ e: NOW - 1 }), NOW)).toBeUndefined();
   });
 });
