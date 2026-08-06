@@ -1,5 +1,5 @@
 import type { KvLinkValue } from "@urlgen/shared";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import { CloudflareEdgeCache, EdgeCacheError, NoopEdgeCache } from "./edge-cache.js";
 
@@ -18,23 +18,23 @@ let calls: RecordedCall[] = [];
 
 /** Builds a cache whose transport records every call and replies as instructed. */
 function cacheWith(reply: () => Response | Promise<Response>): CloudflareEdgeCache {
-  const fetchImpl = vi.fn(
-    async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
-      calls.push({
-        url: String(input),
-        method: init?.method ?? "GET",
-        authorization: new Headers(init?.headers).get("authorization"),
-        body: typeof init?.body === "string" ? init.body : undefined,
-      });
-      return await reply();
-    },
-  );
+  /* The client only ever passes a string URL, so narrowing here keeps the double
+     honest about what it is actually asked to do. */
+  const fetchImpl = async (input: string, init?: RequestInit): Promise<Response> => {
+    calls.push({
+      url: input,
+      method: init?.method ?? "GET",
+      authorization: new Headers(init?.headers).get("authorization"),
+      body: typeof init?.body === "string" ? init.body : undefined,
+    });
+    return await reply();
+  };
 
   return new CloudflareEdgeCache({
     accountId: ACCOUNT,
     namespaceId: NAMESPACE,
     apiToken: TOKEN,
-    fetchImpl: fetchImpl as unknown as typeof fetch,
+    fetchImpl: fetchImpl as typeof fetch,
   });
 }
 

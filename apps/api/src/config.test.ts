@@ -73,6 +73,42 @@ describe("loadConfig", () => {
     expect(config.NODE_ENV).toBe("production");
   });
 
+  describe("Cloudflare edge cache credentials", () => {
+    const COMPLETE = {
+      CLOUDFLARE_ACCOUNT_ID: "acct",
+      CLOUDFLARE_KV_NAMESPACE_ID: "ns",
+      CLOUDFLARE_API_TOKEN: "token",
+    };
+
+    it("accepts none of them, which is the local-development case", () => {
+      expect(loadConfig({}).CLOUDFLARE_ACCOUNT_ID).toBeUndefined();
+    });
+
+    it("accepts all three together", () => {
+      expect(loadConfig(COMPLETE).CLOUDFLARE_KV_NAMESPACE_ID).toBe("ns");
+    });
+
+    it.each(Object.keys(COMPLETE))("rejects a set that is missing %s", (missing) => {
+      const partial = { ...COMPLETE } as Record<string, string | undefined>;
+      delete partial[missing];
+
+      /* Partial credentials are worse than none: the origin would report itself
+         configured while every KV write failed, so an owner's edit would appear
+         to succeed and never reach the edge. */
+      try {
+        loadConfig(partial);
+        expect.unreachable("partial Cloudflare credentials should throw");
+      } catch (error) {
+        expect(error).toBeInstanceOf(ConfigError);
+        expect((error as ConfigError).issues.join("\n")).toContain(missing);
+      }
+    });
+
+    it("treats a blank value as absent rather than as a configured empty credential", () => {
+      expect(() => loadConfig({ ...COMPLETE, CLOUDFLARE_API_TOKEN: "" })).toThrow(ConfigError);
+    });
+  });
+
   it("requires production secrets, which are optional locally", () => {
     expect(loadConfig({ NODE_ENV: "development" }).INTERNAL_API_TOKEN).toBeUndefined();
 
