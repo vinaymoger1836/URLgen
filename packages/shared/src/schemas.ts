@@ -129,6 +129,17 @@ export const kvLinkValueSchema = z.object({
   s: linkStatusSchema,
 });
 
+/**
+ * The KV key for a slug.
+ *
+ * Defined here rather than in either service because both write it: the Worker on
+ * cache-miss write-back, the origin on create/update/delete via the Cloudflare API.
+ * A prefix keeps room for other key families in the same namespace later.
+ */
+export function kvLinkKey(slug: string): string {
+  return `l:${slug}`;
+}
+
 export type CreateLinkRequest = z.infer<typeof createLinkRequestSchema>;
 export type UpdateLinkRequest = z.infer<typeof updateLinkRequestSchema>;
 export type LinkRecord = z.infer<typeof linkRecordSchema>;
