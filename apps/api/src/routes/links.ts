@@ -14,10 +14,17 @@ import {
   type UrlSafetyIssue,
   type UrlSafetyResult,
 } from "@urlgen/shared";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 
 import type { Config } from "../config.js";
-import { isExpired, resolveOwnerId, sendError, shortUrlFor } from "../http/helpers.js";
+import {
+  isExpired,
+  resolveOwnerId,
+  sendError,
+  shortUrlFor,
+  toKvLinkValue,
+} from "../http/helpers.js";
+import type { EdgeCache } from "../repositories/edge-cache.js";
 import {
   LinkNotFoundError,
   SlugAllocationError,
@@ -51,10 +58,11 @@ export interface LinkRoutesOptions {
   config: Config;
   repository: LinkRepository;
   safetyChecker: UrlSafetyChecker;
+  edgeCache: EdgeCache;
 }
 
 export function registerLinkRoutes(app: FastifyInstance, options: LinkRoutesOptions): void {
-  const { config, repository, safetyChecker } = options;
+  const { config, repository, safetyChecker, edgeCache } = options;
   const ownHosts = [config.SHORT_DOMAIN];
 
   app.post("/api/links", async (request, reply) => {
@@ -111,6 +119,13 @@ export function registerLinkRoutes(app: FastifyInstance, options: LinkRoutesOpti
         ...(expiresAt !== undefined ? { expiresAt } : {}),
         ...(assessment?.punycode === true ? { punycode: true } : {}),
       });
+
+      /* Warm the edge on create rather than waiting for the first visitor to take
+         a full origin round trip. A shortened link is usually shared immediately
+         after it is made, so the first click is the one most worth having fast. */
+      await syncEdgeCache(request, "warm", record.slug, () =>
+        edgeCache.put(record.slug, toKvLinkValue(record)),
+      );
 
       return reply.code(201).send({
         ...toResponse(record),
@@ -210,8 +225,15 @@ export function registerLinkRoutes(app: FastifyInstance, options: LinkRoutesOpti
 
     try {
       const updated = await repository.update(request.params.slug, patch);
-      /* Phase 2 purges the Workers KV entry here so an edit takes effect at the
-         edge immediately instead of waiting for the KV TTL. */
+
+      /* Overwrite rather than delete. A disabled link overwritten with its new
+         status keeps being answered at the edge — a 410 straight from KV, with no
+         origin traffic at all, which is exactly what an abused link needs.
+         Deleting would turn every hit on it into a cache miss and a round trip. */
+      await syncEdgeCache(request, "overwrite", updated.slug, () =>
+        edgeCache.put(updated.slug, toKvLinkValue(updated)),
+      );
+
       return reply.send({
         ...toResponse(updated),
         shortUrl: shortUrlFor(config.SHORT_DOMAIN, updated.slug),

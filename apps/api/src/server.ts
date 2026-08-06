@@ -12,6 +12,11 @@ import { ZodError } from "zod";
 import type { Config } from "./config.js";
 import { createDocumentClient } from "./repositories/dynamo-client.js";
 import { DynamoLinkRepository } from "./repositories/dynamo-link-repository.js";
+import {
+  CloudflareEdgeCache,
+  NoopEdgeCache,
+  type EdgeCache,
+} from "./repositories/edge-cache.js";
 import type { LinkRepository } from "./repositories/link-repository.js";
 import { registerInternalRoutes } from "./routes/internal.js";
 import { registerLinkRoutes } from "./routes/links.js";
@@ -26,6 +31,7 @@ import { SafeBrowsingClient, type UrlSafetyChecker } from "./services/safe-brows
 export interface ServerDependencies {
   linkRepository: LinkRepository;
   urlSafetyChecker: UrlSafetyChecker;
+  edgeCache: EdgeCache;
 }
 
 /** Headers that may carry a credential and must never reach the logs. */
@@ -73,7 +79,9 @@ export function buildServer(
       },
     });
 
-  registerLinkRoutes(app, { config, repository, safetyChecker });
+  const edgeCache = overrides.edgeCache ?? buildEdgeCache(config, app);
+
+  registerLinkRoutes(app, { config, repository, safetyChecker, edgeCache });
   registerInternalRoutes(app, { config, repository });
 
   app.setNotFoundHandler((request, reply) => {
@@ -105,6 +113,33 @@ export function buildServer(
   });
 
   return app;
+}
+
+/**
+ * Chooses a real edge cache or the no-op, and says which out loud.
+ *
+ * A silent no-op is the failure mode worth guarding against: everything would
+ * look healthy while every edit quietly failed to reach the edge.
+ */
+function buildEdgeCache(config: Config, app: FastifyInstance): EdgeCache {
+  const { CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_KV_NAMESPACE_ID, CLOUDFLARE_API_TOKEN } = config;
+
+  if (
+    CLOUDFLARE_ACCOUNT_ID === undefined ||
+    CLOUDFLARE_KV_NAMESPACE_ID === undefined ||
+    CLOUDFLARE_API_TOKEN === undefined
+  ) {
+    app.log.warn(
+      "CLOUDFLARE_* not configured — edge cache invalidation is disabled; edits will not reach Workers KV",
+    );
+    return new NoopEdgeCache();
+  }
+
+  return new CloudflareEdgeCache({
+    accountId: CLOUDFLARE_ACCOUNT_ID,
+    namespaceId: CLOUDFLARE_KV_NAMESPACE_ID,
+    apiToken: CLOUDFLARE_API_TOKEN,
+  });
 }
 
 /**

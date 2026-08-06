@@ -9,11 +9,11 @@
  * firewalled or routed separately from the public surface.
  */
 
-import { isWellFormedSlug, type KvLinkValue } from "@urlgen/shared";
+import { isWellFormedSlug } from "@urlgen/shared";
 import type { FastifyInstance } from "fastify";
 
 import type { Config } from "../config.js";
-import { isExpired, secretsMatch, sendError } from "../http/helpers.js";
+import { isExpired, secretsMatch, sendError, toKvLinkValue } from "../http/helpers.js";
 import type { LinkRepository } from "../repositories/link-repository.js";
 
 const TOKEN_HEADER = "x-internal-token";
@@ -57,12 +57,6 @@ export function registerInternalRoutes(app: FastifyInstance, options: InternalRo
       return sendError(reply, "link_expired", "This link has expired");
     }
 
-    const value: KvLinkValue = {
-      u: record.targetUrl,
-      s: record.status,
-      ...(record.expiresAt !== undefined ? { e: Date.parse(record.expiresAt) } : {}),
-    };
-
-    return reply.header("cache-control", "no-store").code(200).send(value);
+    return reply.header("cache-control", "no-store").code(200).send(toKvLinkValue(record));
   });
 }

@@ -16,9 +16,23 @@ import { z } from "zod";
 const SECRET_KEYS = [
   "AWS_SECRET_ACCESS_KEY",
   "CLICKHOUSE_PASSWORD",
+  "CLOUDFLARE_API_TOKEN",
   "INTERNAL_API_TOKEN",
   "SAFE_BROWSING_API_KEY",
   "VISITOR_HASH_SALT",
+] as const;
+
+/**
+ * Cache invalidation needs all three or none.
+ *
+ * Two out of three is the dangerous state: the origin would look configured,
+ * every write would fail, and the edge would keep serving a target the owner
+ * thinks they already changed.
+ */
+const CLOUDFLARE_KEYS = [
+  "CLOUDFLARE_ACCOUNT_ID",
+  "CLOUDFLARE_KV_NAMESPACE_ID",
+  "CLOUDFLARE_API_TOKEN",
 ] as const;
 
 /**
@@ -57,9 +71,28 @@ const envSchema = z
     VISITOR_HASH_SALT: z.string().min(16).optional(),
     INTERNAL_API_TOKEN: z.string().min(32).optional(),
 
+    /* Edge cache invalidation. Absent locally: `wrangler dev` simulates its own
+       KV namespace, so there is nothing at api.cloudflare.com to invalidate. */
+    CLOUDFLARE_ACCOUNT_ID: z.string().min(1).optional(),
+    CLOUDFLARE_KV_NAMESPACE_ID: z.string().min(1).optional(),
+    CLOUDFLARE_API_TOKEN: z.string().min(1).optional(),
+
     SHORT_DOMAIN: z.string().min(1).default("localhost:8787"),
   })
   .superRefine((env, ctx) => {
+    const cloudflareSet = CLOUDFLARE_KEYS.filter((key) => env[key] !== undefined);
+    if (cloudflareSet.length > 0 && cloudflareSet.length < CLOUDFLARE_KEYS.length) {
+      for (const key of CLOUDFLARE_KEYS) {
+        if (env[key] === undefined) {
+          ctx.addIssue({
+            code: "custom",
+            path: [key],
+            message: `${key} is required when any other CLOUDFLARE_* variable is set`,
+          });
+        }
+      }
+    }
+
     if (env.NODE_ENV !== "production") {
       return;
     }

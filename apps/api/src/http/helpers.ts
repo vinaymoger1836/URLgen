@@ -2,7 +2,14 @@
 
 import { timingSafeEqual } from "node:crypto";
 
-import { ERROR_STATUS, apiError, type ErrorCode, type LinkRecord } from "@urlgen/shared";
+import {
+  ERROR_STATUS,
+  apiError,
+  type ErrorCode,
+  type KvLinkValue,
+  type LinkRecord,
+  type LinkSummary,
+} from "@urlgen/shared";
 import type { FastifyReply, FastifyRequest } from "fastify";
 
 /**
@@ -61,6 +68,21 @@ export function isExpired(
  */
 export function isResolvable(record: LinkRecord, now: number = Date.now()): boolean {
   return record.status === "active" && !isExpired(record, now);
+}
+
+/**
+ * Projects a stored record onto the compact blob the edge caches.
+ *
+ * Single-character keys because this value is read on every redirect. Nothing
+ * internal — owner, dedup hash, click count — crosses into it: KV is readable by
+ * anything with the namespace binding, and the edge needs none of it.
+ */
+export function toKvLinkValue(record: LinkRecord | LinkSummary): KvLinkValue {
+  return {
+    u: record.targetUrl,
+    s: record.status,
+    ...(record.expiresAt !== undefined ? { e: Date.parse(record.expiresAt) } : {}),
+  };
 }
 
 /** Builds the public short URL for a slug. */
