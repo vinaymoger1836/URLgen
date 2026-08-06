@@ -2,7 +2,8 @@
 #
 # SECRETS DO NOT BELONG IN THIS FILE — it is committed. Set them with:
 #   wrangler secret put INTERNAL_API_TOKEN
-# Values here are non-sensitive configuration only.
+# Values here are non-sensitive configuration only. Locally, secrets come from
+# apps/edge/.dev.vars, which is gitignored.
 
 name = "urlgen-edge"
 main = "src/index.ts"
@@ -12,6 +13,10 @@ compatibility_date = "2026-08-01"
 #   wrangler kv namespace create LINKS
 #   wrangler kv namespace create LINKS --preview
 # then paste the returned ids here. Namespace ids are not secrets.
+#
+# `wrangler dev` and the test suite both simulate KV locally, so these stay as
+# placeholders until the Worker is actually deployed. The origin needs the real
+# id too — as CLOUDFLARE_KV_NAMESPACE_ID — so that edits can invalidate the cache.
 [[kv_namespaces]]
 binding = "LINKS"
 id = "REPLACE_WITH_KV_NAMESPACE_ID"

@@ -6,7 +6,7 @@
   "description": "Origin API — write path, source of truth, analytics queries",
   "main": "src/index.ts",
   "scripts": {
-    "dev": "tsx --env-file-if-exists=../../.env watch src/index.ts",
+    "dev": "tsx watch --env-file-if-exists=../../.env src/index.ts",
     "start": "tsx --env-file-if-exists=../../.env src/index.ts",
     "typecheck": "tsc --noEmit",
     "build": "tsc --noEmit",
