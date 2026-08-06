@@ -1,8 +1,9 @@
-import { urlDedupHash } from "@urlgen/shared";
+import { kvLinkKey, urlDedupHash, type KvLinkValue } from "@urlgen/shared";
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { loadConfig } from "../config.js";
+import { EdgeCacheError, type EdgeCache } from "../repositories/edge-cache.js";
 import { InMemoryLinkRepository } from "../repositories/in-memory-link-repository.js";
 import { buildServer } from "../server.js";
 import type { SafeBrowsingVerdict, UrlSafetyChecker } from "../services/safe-browsing.js";
@@ -19,14 +20,44 @@ class StubChecker implements UrlSafetyChecker {
   }
 }
 
+type EdgeCacheOp =
+  | { op: "put"; slug: string; value: KvLinkValue }
+  | { op: "purge"; slug: string };
+
+/** Records what the routes ask of the edge, and can be told to fail. */
+class RecordingEdgeCache implements EdgeCache {
+  public readonly ops: EdgeCacheOp[] = [];
+  public failure: Error | undefined;
+
+  public put(slug: string, value: KvLinkValue): Promise<void> {
+    this.ops.push({ op: "put", slug, value });
+    return this.#settle();
+  }
+
+  public purge(slug: string): Promise<void> {
+    this.ops.push({ op: "purge", slug });
+    return this.#settle();
+  }
+
+  #settle(): Promise<void> {
+    return this.failure === undefined ? Promise.resolve() : Promise.reject(this.failure);
+  }
+}
+
 let app: FastifyInstance;
 let repository: InMemoryLinkRepository;
 let checker: StubChecker;
+let edgeCache: RecordingEdgeCache;
 
 beforeEach(async () => {
   repository = new InMemoryLinkRepository();
   checker = new StubChecker();
-  app = buildServer(config, { linkRepository: repository, urlSafetyChecker: checker });
+  edgeCache = new RecordingEdgeCache();
+  app = buildServer(config, {
+    linkRepository: repository,
+    urlSafetyChecker: checker,
+    edgeCache,
+  });
   await app.ready();
 });
 
@@ -315,5 +346,162 @@ describe("GET /api/links", () => {
   it("rejects a nonsense limit", async () => {
     const response = await app.inject({ method: "GET", url: "/api/links?limit=9999" });
     expect(response.statusCode).toBe(400);
+  });
+});
+
+describe("edge cache invalidation", () => {
+  async function createFor(body: Record<string, unknown>): Promise<string> {
+    const response = await createLink(body);
+    return response.json<{ slug: string }>().slug;
+  }
+
+  it("warms the edge on create so the first click is a hit", async () => {
+    const slug = await createFor({ url: "https://example.com/new" });
+
+    expect(edgeCache.ops).toEqual([
+      { op: "put", slug, value: { u: "https://example.com/new", s: "active" } },
+    ]);
+  });
+
+  it("carries the expiry into the cached blob as epoch milliseconds", async () => {
+    const expiresAt = new Date(Date.now() + 86_400_000).toISOString();
+
+    const slug = await createFor({ url: "https://example.com/timed", expiresAt });
+
+    expect(edgeCache.ops).toEqual([
+      {
+        op: "put",
+        slug,
+        value: { u: "https://example.com/timed", s: "active", e: Date.parse(expiresAt) },
+      },
+    ]);
+  });
+
+  it("does not write again when a create is deduplicated", async () => {
+    await createFor({ url: "https://example.com/same" });
+    edgeCache.ops.length = 0;
+
+    await createLink({ url: "https://example.com/same" });
+
+    /* The existing entry is already correct, and KV writes are the scarce
+       resource — 1000 a day against 100000 reads. */
+    expect(edgeCache.ops).toEqual([]);
+  });
+
+  it("overwrites the entry when the target changes", async () => {
+    const slug = await createFor({ url: "https://example.com/before" });
+    edgeCache.ops.length = 0;
+
+    await app.inject({
+      method: "PATCH",
+      url: `/api/links/${slug}`,
+      headers: { "x-owner-id": "alice" },
+      payload: { url: "https://example.com/after" },
+    });
+
+    expect(edgeCache.ops).toEqual([
+      { op: "put", slug, value: { u: "https://example.com/after", s: "active" } },
+    ]);
+  });
+
+  it("pushes a disabled status to the edge instead of purging it", async () => {
+    const slug = await createFor({ url: "https://example.com/abusive" });
+    edgeCache.ops.length = 0;
+
+    await app.inject({
+      method: "PATCH",
+      url: `/api/links/${slug}`,
+      headers: { "x-owner-id": "alice" },
+      payload: { status: "disabled" },
+    });
+
+    /* A disabled link is the one most likely to still be receiving traffic.
+       Keeping a tombstone at the edge means those hits are answered there rather
+       than becoming a cache miss and an origin round trip each. */
+    expect(edgeCache.ops).toEqual([
+      { op: "put", slug, value: { u: "https://example.com/abusive", s: "disabled" } },
+    ]);
+  });
+
+  it("purges the entry on delete", async () => {
+    const slug = await createFor({ url: "https://example.com/gone" });
+    edgeCache.ops.length = 0;
+
+    await app.inject({
+      method: "DELETE",
+      url: `/api/links/${slug}`,
+      headers: { "x-owner-id": "alice" },
+    });
+
+    expect(edgeCache.ops).toEqual([{ op: "purge", slug }]);
+  });
+
+  it("does not touch the edge when a delete matched nothing", async () => {
+    await app.inject({
+      method: "DELETE",
+      url: "/api/links/nosuchslug",
+      headers: { "x-owner-id": "alice" },
+    });
+
+    expect(edgeCache.ops).toEqual([]);
+  });
+
+  it("uses a key the Worker will actually read", async () => {
+    const slug = await createFor({ url: "https://example.com/keyed" });
+
+    /* Both sides derive the key from @urlgen/shared. Asserting the derived form
+       here is what would catch a prefix change made on only one side. */
+    expect(kvLinkKey(slug)).toBe(`l:${slug}`);
+  });
+
+  describe("when the edge cache is failing", () => {
+    beforeEach(() => {
+      edgeCache.failure = new EdgeCacheError("Cloudflare KV returned 500", 500);
+    });
+
+    it("still reports a successful create", async () => {
+      const response = await createLink({ url: "https://example.com/despite" });
+
+      /* The row is already written. Failing here would tell the owner their link
+         was not created when it was, and a retry would allocate a second slug. */
+      expect(response.statusCode).toBe(201);
+    });
+
+    it("still reports a successful update", async () => {
+      const slug = await createFor({ url: "https://example.com/a" });
+
+      const response = await app.inject({
+        method: "PATCH",
+        url: `/api/links/${slug}`,
+        headers: { "x-owner-id": "alice" },
+        payload: { url: "https://example.com/b" },
+      });
+
+      expect(response.statusCode).toBe(200);
+    });
+
+    it("still reports a successful delete", async () => {
+      const slug = await createFor({ url: "https://example.com/a" });
+
+      const response = await app.inject({
+        method: "DELETE",
+        url: `/api/links/${slug}`,
+        headers: { "x-owner-id": "alice" },
+      });
+
+      expect(response.statusCode).toBe(204);
+    });
+
+    it("leaves the source of truth updated even though the edge is stale", async () => {
+      const slug = await createFor({ url: "https://example.com/a" });
+
+      await app.inject({
+        method: "DELETE",
+        url: `/api/links/${slug}`,
+        headers: { "x-owner-id": "alice" },
+      });
+
+      await expect(repository.findBySlug(slug)).resolves.toMatchObject({ status: "deleted" });
+    });
   });
 });

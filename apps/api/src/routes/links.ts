@@ -255,9 +255,37 @@ export function registerLinkRoutes(app: FastifyInstance, options: LinkRoutesOpti
     }
 
     await repository.softDelete(request.params.slug);
-    /* Phase 2 purges the KV entry here. */
+
+    /* Purge, not overwrite: a deleted slug is never recycled, so nothing at the
+       edge is worth keeping. The miss path answers the rare late visitor. */
+    await syncEdgeCache(request, "purge", request.params.slug, () =>
+      edgeCache.purge(request.params.slug),
+    );
+
     return reply.code(204).send();
   });
+}
+
+/**
+ * Runs an edge cache operation without letting it fail the request.
+ *
+ * The source of truth has already changed by the time this runs, so failing here
+ * would tell the owner their edit did not happen when it did — and they would
+ * retry into a no-op. A stale edge entry is the lesser problem, it is bounded by
+ * the KV backstop TTL, and it is the kind of thing an operator needs an alert
+ * for rather than an error the caller can do anything about.
+ */
+async function syncEdgeCache(
+  request: FastifyRequest,
+  operation: "warm" | "overwrite" | "purge",
+  slug: string,
+  action: () => Promise<void>,
+): Promise<void> {
+  try {
+    await action();
+  } catch (error) {
+    request.log.error({ err: error, slug, operation }, "edge cache sync failed");
+  }
 }
 
 /**

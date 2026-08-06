@@ -7,7 +7,11 @@
  * disagree.
  */
 
-declare namespace Cloudflare {
-  // eslint-disable-next-line @typescript-eslint/no-empty-object-type -- declaration merging into the ambient `Cloudflare.Env`; the members come from the extends clause.
-  interface Env extends import("./env.js").Env {}
+import type { Env as WorkerEnv } from "./env.js";
+
+declare global {
+  namespace Cloudflare {
+    // eslint-disable-next-line @typescript-eslint/no-empty-object-type -- merges into the ambient `Cloudflare.Env`; the members come from the extends clause.
+    interface Env extends WorkerEnv {}
+  }
 }
