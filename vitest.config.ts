@@ -4,12 +4,13 @@ import { defineConfig } from "vitest/config";
  * Root test runner. Each workspace package that has tests contributes a project,
  * so a single `pnpm test` covers the whole monorepo.
  *
- * Phase 2 adds `apps/edge` as its own project using `@cloudflare/vitest-pool-workers`,
- * which needs a different pool and cannot share this Node environment.
+ * `apps/edge` brings its own pool — `@cloudflare/vitest-pool-workers` runs those
+ * tests inside workerd rather than this Node environment, which is why it has to
+ * be a separate project rather than another directory in the same one.
  */
 export default defineConfig({
   test: {
-    projects: ["packages/shared", "apps/api"],
+    projects: ["packages/shared", "apps/api", "apps/edge"],
     coverage: {
       provider: "v8",
       reporter: ["text", "html"],
