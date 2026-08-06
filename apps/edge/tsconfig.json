@@ -5,9 +5,10 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     /* Only the Workers runtime globals — @types/node must NOT leak in here, or
-       code that cannot run at the edge would still typecheck. */
-    "types": ["@cloudflare/workers-types"],
+       code that cannot run at the edge would still typecheck. The pool-workers
+       entry adds the `cloudflare:test` module used by the test files. */
+    "types": ["@cloudflare/workers-types", "@cloudflare/vitest-pool-workers/types"],
     "noEmit": true
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "vitest.config.ts"]
 }
