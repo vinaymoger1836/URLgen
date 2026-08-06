@@ -140,6 +140,42 @@ export function kvLinkKey(slug: string): string {
   return `l:${slug}`;
 }
 
+/**
+ * Backstop lifetime for a cached link, in seconds.
+ *
+ * Correctness never depends on this value: the origin overwrites the entry on
+ * edit and purges it on delete, and expiry is re-checked from the blob on every
+ * read. The TTL only bounds how long an entry nobody has touched survives.
+ */
+export const KV_MAX_TTL_SECONDS = 7 * 24 * 60 * 60;
+
+/** Workers KV rejects any `expirationTtl` below this. */
+export const KV_MIN_TTL_SECONDS = 60;
+
+/**
+ * The TTL to write a blob with, or `undefined` when it is not worth writing.
+ *
+ * A link expiring sooner than the backstop gets the shorter lifetime so the dead
+ * entry evicts itself. A link expiring inside KV's 60-second floor is not written
+ * at all — spending one of the day's 1000 writes on an entry that is about to be
+ * wrong is worse than letting the next request miss.
+ *
+ * Shared because both writers need the identical rule: a Worker write-back that
+ * outlived an origin write would resurrect a stale target.
+ */
+export function kvBackstopTtlSeconds(value: KvLinkValue, now: number): number | undefined {
+  if (value.e === undefined) {
+    return KV_MAX_TTL_SECONDS;
+  }
+
+  const remaining = Math.floor((value.e - now) / 1000);
+  if (remaining < KV_MIN_TTL_SECONDS) {
+    return undefined;
+  }
+
+  return Math.min(remaining, KV_MAX_TTL_SECONDS);
+}
+
 export type CreateLinkRequest = z.infer<typeof createLinkRequestSchema>;
 export type UpdateLinkRequest = z.infer<typeof updateLinkRequestSchema>;
 export type LinkRecord = z.infer<typeof linkRecordSchema>;
