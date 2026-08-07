@@ -1,5 +1,11 @@
 import { createExecutionContext, env, waitOnExecutionContext } from "cloudflare:test";
-import { kvLinkKey, type KvLinkValue } from "@urlgen/shared";
+import {
+  CLICK_INGEST_PATH,
+  clickEventSchema,
+  kvLinkKey,
+  type ClickEvent,
+  type KvLinkValue,
+} from "@urlgen/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Env } from "./env.js";
@@ -7,27 +13,63 @@ import worker from "./index.js";
 
 interface OriginCall {
   url: string;
+  method: string;
   token: string | undefined;
+  body: string | undefined;
 }
 
 let originCalls: OriginCall[] = [];
 
+/** Calls to the cache-miss endpoint — the ones that put origin latency on the redirect. */
+function resolveCalls(): OriginCall[] {
+  return originCalls.filter((call) => call.url.includes("/internal/resolve/"));
+}
+
+/** Calls to the click pipeline — deferred work, never on the redirect's path. */
+function clickCalls(): OriginCall[] {
+  return originCalls.filter((call) => call.url.endsWith(CLICK_INGEST_PATH));
+}
+
+/** The events the Worker actually posted, parsed through the shared contract. */
+function trackedEvents(): ClickEvent[] {
+  return clickCalls().map((call) => clickEventSchema.parse(JSON.parse(call.body ?? "null")));
+}
+
+const acceptClick = (): Response => new Response(null, { status: 202 });
+
 /**
  * Replaces the global `fetch` the Worker uses to reach the origin.
  *
- * The handler runs per call and builds a fresh `Response` every time — a single
+ * The handlers run per call and build a fresh `Response` every time — a single
  * shared Response would work once and then throw, because a body is a single-use
  * stream. That exact mistake made a Phase 1 cache test silently assert nothing.
+ *
+ * Resolve and ingest are stubbed separately because they fail independently in
+ * production: the whole design claim is that a broken ingest changes nothing about
+ * a redirect, and a shared stub could not express that.
  */
-function stubOrigin(handler: (url: string) => Response | Promise<Response>): void {
+function stubOrigin(
+  resolve: (url: string) => Response | Promise<Response>,
+  ingest: () => Response | Promise<Response> = acceptClick,
+): void {
   vi.stubGlobal("fetch", async (url: string, init?: RequestInit): Promise<Response> => {
     const header = new Headers(init?.headers).get("x-internal-token");
-    originCalls.push({ url, token: header ?? undefined });
-    return await handler(url);
+    originCalls.push({
+      url,
+      method: init?.method ?? "GET",
+      token: header ?? undefined,
+      body: typeof init?.body === "string" ? init.body : undefined,
+    });
+    return url.endsWith(CLICK_INGEST_PATH) ? await ingest() : await resolve(url);
   });
 }
 
-/** Fails the test if the Worker reaches for the origin at all. */
+/**
+ * Fails the test if the Worker resolves through the origin.
+ *
+ * Click posts are still accepted: they are expected on every redirect and are not
+ * what this guard is about.
+ */
 function forbidOrigin(): void {
   stubOrigin(() => {
     throw new Error("the origin must not be contacted on this path");
@@ -130,7 +172,7 @@ describe("KV hit", () => {
 
     expect(response.status).toBe(302);
     expect(response.headers.get("location")).toBe("https://example.com/target");
-    expect(originCalls).toHaveLength(0);
+    expect(resolveCalls()).toHaveLength(0);
   });
 
   it("marks the redirect uncacheable so repeat clicks still reach the edge", async () => {
@@ -168,7 +210,7 @@ describe("KV hit", () => {
     const response = await get(`/${slug}`);
 
     expect(response.status).toBe(410);
-    expect(originCalls).toHaveLength(0);
+    expect(resolveCalls()).toHaveLength(0);
   });
 
   it("still redirects when the expiry is in the future", async () => {
@@ -187,7 +229,7 @@ describe("KV hit", () => {
 
     expect(response.status).toBe(302);
     expect(response.headers.get("location")).toBe("https://example.com/repaired");
-    expect(originCalls).toHaveLength(1);
+    expect(resolveCalls()).toHaveLength(1);
   });
 
   it("serves a 404 rather than a redirect when the cached target is not http(s)", async () => {
@@ -220,9 +262,9 @@ describe("cache miss", () => {
 
     await get(`/${slug}`);
 
-    expect(originCalls).toHaveLength(1);
-    expect(originCalls[0]?.url).toBe(`https://origin.test/internal/resolve/${slug}`);
-    expect(originCalls[0]?.token).toBe(env.INTERNAL_API_TOKEN);
+    expect(resolveCalls()).toHaveLength(1);
+    expect(resolveCalls()[0]?.url).toBe(`https://origin.test/internal/resolve/${slug}`);
+    expect(resolveCalls()[0]?.token).toBe(env.INTERNAL_API_TOKEN);
   });
 
   it("writes the resolved value back so the next request is a hit", async () => {
@@ -245,7 +287,7 @@ describe("cache miss", () => {
     const second = await get(`/${slug}`);
 
     expect(second.status).toBe(302);
-    expect(originCalls).toHaveLength(1);
+    expect(resolveCalls()).toHaveLength(1);
   });
 
   it("does not cache a link the origin says is already expired", async () => {
@@ -349,7 +391,7 @@ describe("origin failure", () => {
     const response = await get(`/${slug}`, envWithoutToken);
 
     expect(response.status).toBe(503);
-    expect(originCalls).toHaveLength(0);
+    expect(resolveCalls()).toHaveLength(0);
   });
 
   it("still serves a KV hit when the shared token is not bound", async () => {
