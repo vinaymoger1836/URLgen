@@ -1,6 +1,7 @@
 import { createExecutionContext, env, waitOnExecutionContext } from "cloudflare:test";
 import {
   CLICK_INGEST_PATH,
+  MAX_USER_AGENT_LENGTH,
   clickEventSchema,
   kvLinkKey,
   type ClickEvent,
@@ -402,5 +403,192 @@ describe("origin failure", () => {
     /* A missing secret degrades the miss path only. Links already at the edge
        keep working, which is the whole point of having an edge cache. */
     expect((await get(`/${slug}`, envWithoutToken)).status).toBe(302);
+  });
+});
+
+describe("click tracking", () => {
+  /** A request shaped the way Cloudflare hands one to the Worker at a real PoP. */
+  function visitorRequest(slug: string): Request {
+    return new Request(`https://short.test/${slug}`, {
+      headers: {
+        "user-agent":
+          "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
+        referer: "https://news.ycombinator.com/item?id=1",
+        "cf-connecting-ip": "203.0.113.7",
+      },
+      cf: { country: "IN", city: "Bengaluru", timezone: "Asia/Kolkata", colo: "BOM" },
+    });
+  }
+
+  it("posts exactly one click for a KV-hit redirect", async () => {
+    forbidOrigin();
+    const slug = await seed();
+
+    await dispatch(visitorRequest(slug));
+
+    expect(clickCalls()).toHaveLength(1);
+    expect(clickCalls()[0]?.method).toBe("POST");
+    expect(clickCalls()[0]?.url).toBe(`https://origin.test${CLICK_INGEST_PATH}`);
+    expect(clickCalls()[0]?.token).toBe(env.INTERNAL_API_TOKEN);
+  });
+
+  it("carries the geo, agent and referrer facts that only exist at the edge", async () => {
+    forbidOrigin();
+    const slug = await seed();
+
+    await dispatch(visitorRequest(slug));
+
+    const event = trackedEvents()[0];
+    expect(event).toMatchObject({
+      slug,
+      country: "IN",
+      city: "Bengaluru",
+      timezone: "Asia/Kolkata",
+      colo: "BOM",
+      referrer: "https://news.ycombinator.com/item?id=1",
+      ip: "203.0.113.7",
+    });
+    expect(event?.userAgent).toContain("iPhone");
+    expect(event?.ts).toBeGreaterThan(0);
+  });
+
+  it("sends the raw User-Agent, leaving the parsing to the origin", async () => {
+    forbidOrigin();
+    const slug = await seed();
+
+    await dispatch(visitorRequest(slug));
+
+    /* Nothing derived may appear in the payload: UA parsing is regex-heavy and the
+       Worker has 10ms of CPU for the entire redirect. */
+    const body = clickCalls()[0]?.body ?? "";
+    expect(body).not.toContain("device");
+    expect(body).not.toContain("browser");
+  });
+
+  it("mints a distinct idempotency key per click", async () => {
+    forbidOrigin();
+    const slug = await seed();
+
+    await dispatch(visitorRequest(slug));
+    await dispatch(visitorRequest(slug));
+
+    const ids = trackedEvents().map((event) => event.id);
+    expect(ids).toHaveLength(2);
+    expect(new Set(ids).size).toBe(2);
+  });
+
+  it("also tracks a redirect that came from a cache miss", async () => {
+    const slug = uniqueSlug();
+    stubOrigin(() => jsonResponse({ u: "https://example.com/fresh", s: "active" }));
+
+    await dispatch(visitorRequest(slug));
+
+    expect(resolveCalls()).toHaveLength(1);
+    expect(clickCalls()).toHaveLength(1);
+  });
+
+  it.each([
+    ["a disabled link", { s: "disabled" } as Partial<KvLinkValue>],
+    ["an expired link", { e: Date.now() - 1000 } as Partial<KvLinkValue>],
+    ["a deleted link", { s: "deleted" } as Partial<KvLinkValue>],
+    ["a poisoned target", { u: "javascript:alert(1)" } as Partial<KvLinkValue>],
+  ])("records nothing for %s", async (_label, blob) => {
+    forbidOrigin();
+    const slug = await seed(blob);
+
+    await dispatch(visitorRequest(slug));
+
+    /* A click is a visit that went somewhere. Counting terminal pages would put
+       traffic in the dashboard that never reached the target. */
+    expect(clickCalls()).toHaveLength(0);
+  });
+
+  it("records nothing for a slug that was never a link", async () => {
+    forbidOrigin();
+
+    await get("/wp-login.php");
+
+    expect(originCalls).toHaveLength(0);
+  });
+
+  it("does not count HEAD, which is what link checkers and preview bots send", async () => {
+    forbidOrigin();
+    const slug = await seed();
+
+    const response = await dispatch(
+      new Request(`https://short.test/${slug}`, { method: "HEAD" }),
+    );
+
+    expect(response.status).toBe(302);
+    expect(clickCalls()).toHaveLength(0);
+  });
+
+  it("still redirects when the ingest endpoint returns an error", async () => {
+    const slug = await seed();
+    stubOrigin(
+      () => {
+        throw new Error("the origin must not be resolved from here");
+      },
+      () => jsonResponse({ error: { code: "internal_error", message: "x" } }, 500),
+    );
+
+    const response = await dispatch(visitorRequest(slug));
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe("https://example.com/target");
+  });
+
+  it("still redirects when the ingest endpoint is unreachable", async () => {
+    const slug = await seed();
+    stubOrigin(
+      () => {
+        throw new Error("the origin must not be resolved from here");
+      },
+      () => {
+        throw new Error("connection refused");
+      },
+    );
+
+    /* The whole point of Phase 3: tracking is fire-and-forget, and a dead origin
+       costs a row in a chart, never a redirect. */
+    const response = await dispatch(visitorRequest(slug));
+
+    expect(response.status).toBe(302);
+  });
+
+  it("skips the post entirely when the shared token is not bound", async () => {
+    forbidOrigin();
+    const slug = await seed();
+    const { INTERNAL_API_TOKEN: _unset, ...envWithoutToken } = env;
+
+    const response = await dispatch(visitorRequest(slug), envWithoutToken);
+
+    expect(response.status).toBe(302);
+    expect(clickCalls()).toHaveLength(0);
+  });
+
+  it("omits fields Cloudflare could not determine rather than sending blanks", async () => {
+    forbidOrigin();
+    const slug = await seed();
+
+    await dispatch(new Request(`https://short.test/${slug}`));
+
+    const event = trackedEvents()[0];
+    expect(event?.country).toBeUndefined();
+    expect(event?.userAgent).toBeUndefined();
+    expect(event?.referrer).toBeUndefined();
+  });
+
+  it("truncates an absurd User-Agent instead of losing the click", async () => {
+    forbidOrigin();
+    const slug = await seed();
+
+    await dispatch(
+      new Request(`https://short.test/${slug}`, {
+        headers: { "user-agent": "U".repeat(4096) },
+      }),
+    );
+
+    expect(trackedEvents()[0]?.userAgent).toHaveLength(MAX_USER_AGENT_LENGTH);
   });
 });
