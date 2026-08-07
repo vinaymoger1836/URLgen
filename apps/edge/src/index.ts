@@ -56,7 +56,7 @@ export default {
     }
 
     const now = Date.now();
-    const outcome = await resolve(request, env, ctx, slug, now);
+    const outcome = await resolve(env, ctx, slug, now);
 
     if (outcome.kind === "redirect") {
       recordClick(request, env, ctx, slug, now);
@@ -68,12 +68,11 @@ export default {
 
 /** Answers from the edge cache, falling through to the origin on a miss. */
 async function resolve(
-  request: Request,
   env: Env,
   ctx: ExecutionContext,
   slug: string,
   now: number,
-): Promise<LinkOutcome> {
+): Promise<ResolveOutcome> {
   const cached = await readCachedLink(env, slug);
   if (cached !== undefined) {
     return evaluateLink(cached, now);
@@ -96,7 +95,7 @@ async function resolveOnMiss(
   ctx: ExecutionContext,
   slug: string,
   now: number,
-): Promise<LinkOutcome> {
+): Promise<ResolveOutcome> {
   const resolution = await resolveFromOrigin(env, slug);
 
   switch (resolution.kind) {
@@ -143,7 +142,7 @@ async function cacheResolved(env: Env, slug: string, value: KvLinkValue): Promis
 }
 
 /** Maps a decision to the response a visitor sees. */
-function respond(slug: string, outcome: LinkOutcome): Response {
+function respond(slug: string, outcome: ResolveOutcome): Response {
   switch (outcome.kind) {
     case "redirect":
       return redirectTo(outcome.targetUrl);
