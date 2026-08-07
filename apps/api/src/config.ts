@@ -48,6 +48,16 @@ const httpEndpoint = (label: string) =>
     return url !== undefined && ALLOWED_PROTOCOLS.includes(url.protocol);
   }, `${label} must be an absolute http(s) URL`);
 
+/**
+ * A boolean written the way a `.env` file or a Dockerfile writes one.
+ *
+ * Deliberately strict: `Boolean("false")` is `true`, and a flag that silently
+ * means the opposite of what the file says is the worst kind of config bug.
+ */
+const booleanFlag = z
+  .enum(["true", "false", "1", "0"])
+  .transform((value) => value === "true" || value === "1");
+
 const envSchema = z
   .object({
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -66,6 +76,19 @@ const envSchema = z
     CLICKHOUSE_URL: httpEndpoint("CLICKHOUSE_URL").default("http://127.0.0.1:8123"),
     CLICKHOUSE_USER: z.string().min(1).default("default"),
     CLICKHOUSE_PASSWORD: z.string().default(""),
+    CLICKHOUSE_DATABASE: z.string().min(1).default("urlgen"),
+
+    /* Click pipeline. Defaults are sized for the free tier: the buffer cap is what
+       a t3.micro's Redis can hold without the OOM killer taking the whole box, and
+       the batch size keeps ClickHouse inserts in the thousands-of-rows range it
+       wants rather than the one-row-per-insert it hates. */
+    CLICK_BUFFER_MAX: z.coerce.number().int().min(100).max(5_000_000).default(100_000),
+    CLICK_FLUSH_BATCH_SIZE: z.coerce.number().int().min(1).max(100_000).default(1_000),
+    CLICK_FLUSH_INTERVAL_MS: z.coerce.number().int().min(100).max(600_000).default(5_000),
+    /* Exactly one process should flush. Off by default in the API so a multi-replica
+       deploy does not start N flushers; `pnpm consumer` turns it on for the one that
+       should. Local dev sets it in `.env` to keep everything in a single process. */
+    CLICK_CONSUMER_ENABLED: booleanFlag.default(false),
 
     SAFE_BROWSING_API_KEY: z.string().min(1).optional(),
     VISITOR_HASH_SALT: z.string().min(16).optional(),
