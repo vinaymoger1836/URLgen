@@ -52,6 +52,40 @@ export function secretsMatch(provided: string, expected: string): boolean {
   return timingSafeEqual(a, b);
 }
 
+/** Header the Worker authenticates its service-to-service calls with. */
+export const INTERNAL_TOKEN_HEADER = "x-internal-token";
+
+export type InternalAuthResult = "ok" | "not-configured" | "invalid";
+
+/**
+ * Authenticates a call from the edge worker.
+ *
+ * Shared by every `/internal` and `/ingest` route so the comparison is written
+ * once — a second hand-rolled copy is how one endpoint ends up with a `===` and a
+ * timing oracle nobody notices.
+ *
+ * Returns a result rather than sending a reply so the caller decides what a
+ * failure means for its own path: an unconfigured token is a deployment fault
+ * worth logging loudly, and each route logs it in its own words.
+ */
+export function verifyInternalToken(
+  request: FastifyRequest,
+  expectedToken: string | undefined,
+): InternalAuthResult {
+  if (expectedToken === undefined) {
+    return "not-configured";
+  }
+
+  const header = request.headers[INTERNAL_TOKEN_HEADER];
+  const provided = Array.isArray(header) ? header[0] : header;
+
+  if (typeof provided !== "string" || !secretsMatch(provided, expectedToken)) {
+    return "invalid";
+  }
+
+  return "ok";
+}
+
 /** True when the link has an expiry that has already passed. */
 export function isExpired(
   record: Pick<LinkRecord, "expiresAt">,

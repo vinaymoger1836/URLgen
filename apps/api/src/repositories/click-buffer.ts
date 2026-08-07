@@ -38,11 +38,28 @@ import { Redis, type Result } from "ioredis";
 
 import { clickRowSchema, type ClickRow } from "../analytics/click-row.js";
 
-const KEY_PREFIX = "urlgen:clicks";
+export const DEFAULT_KEY_PREFIX = "urlgen:clicks";
 
-export const BUFFER_KEY = `${KEY_PREFIX}:buffer`;
-export const INFLIGHT_KEY = `${KEY_PREFIX}:inflight`;
-export const DROPPED_KEY = `${KEY_PREFIX}:dropped`;
+export interface ClickKeys {
+  buffer: string;
+  inflight: string;
+  dropped: string;
+}
+
+/**
+ * The three keys a buffer owns, under a given prefix.
+ *
+ * Configurable because one Redis often serves more than one environment on a free
+ * tier, and a staging flusher draining production's buffer is not a failure mode
+ * worth discovering in production.
+ */
+export function clickKeys(prefix: string = DEFAULT_KEY_PREFIX): ClickKeys {
+  return {
+    buffer: `${prefix}:buffer`,
+    inflight: `${prefix}:inflight`,
+    dropped: `${prefix}:dropped`,
+  };
+}
 
 /**
  * Appends one click unless the buffer is already full.
@@ -123,6 +140,8 @@ export interface RedisClickBufferOptions {
   redis: Redis;
   /** Hard ceiling on buffered rows. Past it, clicks are dropped and counted. */
   maxLength: number;
+  /** Key namespace. Defaults to `urlgen:clicks`. */
+  keyPrefix?: string | undefined;
   /** Called for every unparseable buffered row, so corruption is never silent. */
   onCorruptRow?: ((raw: string) => void) | undefined;
 }
@@ -131,19 +150,21 @@ export interface RedisClickBufferOptions {
 export class RedisClickBuffer implements ClickBuffer {
   readonly #redis: Redis;
   readonly #maxLength: number;
+  readonly #keys: ClickKeys;
   readonly #onCorruptRow: ((raw: string) => void) | undefined;
 
   public constructor(options: RedisClickBufferOptions) {
     this.#redis = options.redis;
     this.#maxLength = options.maxLength;
+    this.#keys = clickKeys(options.keyPrefix);
     this.#onCorruptRow = options.onCorruptRow;
   }
 
   /** Appends a click, or reports that the buffer is full. Never blocks the caller. */
   public async push(row: ClickRow): Promise<PushOutcome> {
     const accepted = await this.#redis.clickPush(
-      BUFFER_KEY,
-      DROPPED_KEY,
+      this.#keys.buffer,
+      this.#keys.dropped,
       JSON.stringify(row),
       String(this.#maxLength),
     );
@@ -159,7 +180,7 @@ export class RedisClickBuffer implements ClickBuffer {
    * it. The batch is still acknowledged as a whole, so the bad row does leave.
    */
   public async drain(max: number): Promise<ClickBatch> {
-    const raw = await this.#redis.clickDrain(BUFFER_KEY, INFLIGHT_KEY, String(max));
+    const raw = await this.#redis.clickDrain(this.#keys.buffer, this.#keys.inflight, String(max));
 
     const rows: ClickRow[] = [];
     let discarded = 0;
@@ -184,38 +205,52 @@ export class RedisClickBuffer implements ClickBuffer {
    * the next cycle picks up the same rows.
    */
   public async ack(): Promise<void> {
-    await this.#redis.del(INFLIGHT_KEY);
+    await this.#redis.del(this.#keys.inflight);
   }
 
   /** Rows waiting to be claimed. The number to alert on if it keeps climbing. */
   public async depth(): Promise<number> {
-    return await this.#redis.llen(BUFFER_KEY);
+    return await this.#redis.llen(this.#keys.buffer);
   }
 
   /** Rows refused since the counter was last reset. Should be zero. */
   public async droppedTotal(): Promise<number> {
-    const value = await this.#redis.get(DROPPED_KEY);
+    const value = await this.#redis.get(this.#keys.dropped);
     return value === null ? 0 : Number.parseInt(value, 10);
   }
+}
+
+export interface CreateRedisOptions {
+  url: string;
+  /**
+   * Required, not optional.
+   *
+   * ioredis emits `error` on a plain EventEmitter, and an `error` event with no
+   * listener is a process-level throw in Node. A Redis blip would take down the
+   * API — and with it the resolve path the edge falls back to — over a subsystem
+   * whose failure is supposed to be survivable.
+   */
+  onError: (error: Error) => void;
 }
 
 /**
  * Builds a Redis connection with the click scripts attached.
  *
- * `maxRetriesPerRequest: null` because every caller of this connection already has
- * a defined answer for failure — ingest drops the click, the flusher retries the
- * batch next cycle. What must not happen is a command rejecting mid-reconnect and
- * turning a transient blip into lost rows.
+ * `lazyConnect` so constructing the wiring opens no socket: the server is built in
+ * tests that never touch Redis, and a connection attempt there would be both slow
+ * and misleading. `commandTimeout` is what bounds a command when Redis is down —
+ * with retries uncapped, it is the only thing that turns "unreachable" into a
+ * prompt error the ingest route can answer with.
  */
-export function createRedis(url: string): Redis {
-  const redis = new Redis(url, {
+export function createRedis(options: CreateRedisOptions): Redis {
+  const redis = new Redis(options.url, {
+    lazyConnect: true,
     maxRetriesPerRequest: null,
-    /* Fail fast on a dead Redis rather than queueing commands forever: the ingest
-       route needs an answer in milliseconds, not whenever Redis comes back. */
-    enableOfflineQueue: false,
+    commandTimeout: 2000,
     connectTimeout: 2000,
-    lazyConnect: false,
   });
+
+  redis.on("error", options.onError);
 
   redis.defineCommand("clickPush", { numberOfKeys: 2, lua: PUSH_SCRIPT });
   redis.defineCommand("clickDrain", { numberOfKeys: 2, lua: DRAIN_SCRIPT });

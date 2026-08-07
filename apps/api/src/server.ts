@@ -9,6 +9,7 @@ import { ERROR_STATUS, apiError } from "@urlgen/shared";
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from "fastify";
 import { ZodError } from "zod";
 
+import { buildClickPipeline, type ClickPipelineOverrides } from "./analytics/pipeline.js";
 import type { Config } from "./config.js";
 import { createDocumentClient } from "./repositories/dynamo-client.js";
 import { DynamoLinkRepository } from "./repositories/dynamo-link-repository.js";
@@ -18,6 +19,7 @@ import {
   type EdgeCache,
 } from "./repositories/edge-cache.js";
 import type { LinkRepository } from "./repositories/link-repository.js";
+import { registerIngestRoutes } from "./routes/ingest.js";
 import { registerInternalRoutes } from "./routes/internal.js";
 import { registerLinkRoutes } from "./routes/links.js";
 import { SafeBrowsingClient, type UrlSafetyChecker } from "./services/safe-browsing.js";
@@ -28,7 +30,7 @@ import { SafeBrowsingClient, type UrlSafetyChecker } from "./services/safe-brows
  * Injectable so tests can supply an in-memory repository and a stub safety
  * checker; unset entries fall back to the real DynamoDB and Safe Browsing wiring.
  */
-export interface ServerDependencies {
+export interface ServerDependencies extends ClickPipelineOverrides {
   linkRepository: LinkRepository;
   urlSafetyChecker: UrlSafetyChecker;
   edgeCache: EdgeCache;
@@ -81,8 +83,24 @@ export function buildServer(
 
   const edgeCache = overrides.edgeCache ?? buildEdgeCache(config, app);
 
+  const clicks = buildClickPipeline(
+    {
+      log: app.log,
+      onShutdown: (hook) => {
+        app.addHook("onClose", hook);
+      },
+    },
+    config,
+    overrides,
+  );
+
   registerLinkRoutes(app, { config, repository, safetyChecker, edgeCache });
   registerInternalRoutes(app, { config, repository });
+  registerIngestRoutes(app, {
+    config,
+    buffer: clicks.buffer,
+    visitorHasher: clicks.visitorHasher,
+  });
 
   app.setNotFoundHandler((request, reply) => {
     void reply

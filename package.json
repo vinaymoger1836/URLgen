@@ -21,6 +21,8 @@
     "dev:edge": "pnpm --filter @urlgen/edge dev",
     "dev:web": "pnpm --filter @urlgen/web dev",
     "table:create": "pnpm --filter @urlgen/api table:create",
+    "clickhouse:create": "pnpm --filter @urlgen/api clickhouse:create",
+    "consumer": "pnpm --filter @urlgen/api consumer",
     "services:up": "docker compose up -d",
     "services:down": "docker compose down",
     "verify": "pnpm lint && pnpm typecheck && pnpm test"

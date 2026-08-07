@@ -13,10 +13,8 @@ import { isWellFormedSlug } from "@urlgen/shared";
 import type { FastifyInstance } from "fastify";
 
 import type { Config } from "../config.js";
-import { isExpired, secretsMatch, sendError, toKvLinkValue } from "../http/helpers.js";
+import { isExpired, sendError, toKvLinkValue, verifyInternalToken } from "../http/helpers.js";
 import type { LinkRepository } from "../repositories/link-repository.js";
-
-const TOKEN_HEADER = "x-internal-token";
 
 export interface InternalRoutesOptions {
   config: Config;
@@ -27,17 +25,14 @@ export function registerInternalRoutes(app: FastifyInstance, options: InternalRo
   const { config, repository } = options;
 
   app.get<{ Params: { slug: string } }>("/internal/resolve/:slug", async (request, reply) => {
-    const expectedToken = config.INTERNAL_API_TOKEN;
-    if (expectedToken === undefined) {
+    const auth = verifyInternalToken(request, config.INTERNAL_API_TOKEN);
+    if (auth === "not-configured") {
       /* Refuse rather than serve unauthenticated: an unset token in production is
          a deployment fault, and this endpoint bypasses all public rate limiting. */
       request.log.error("INTERNAL_API_TOKEN is not configured — refusing internal resolve");
       return sendError(reply, "upstream_unavailable", "Internal resolution is not configured");
     }
-
-    const header = request.headers[TOKEN_HEADER];
-    const provided = Array.isArray(header) ? header[0] : header;
-    if (typeof provided !== "string" || !secretsMatch(provided, expectedToken)) {
+    if (auth === "invalid") {
       return sendError(reply, "unauthorized", "Invalid internal token");
     }
 

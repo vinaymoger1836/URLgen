@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Origin API — write path, source of truth, analytics queries",
+  "description": "Origin API \u2014 write path, source of truth, analytics queries",
   "main": "src/index.ts",
   "scripts": {
     "dev": "tsx watch --env-file-if-exists=../../.env src/index.ts",
@@ -11,7 +11,9 @@
     "typecheck": "tsc --noEmit",
     "build": "tsc --noEmit",
     "test": "vitest run",
-    "table:create": "tsx --env-file-if-exists=../../.env scripts/create-table.ts"
+    "table:create": "tsx --env-file-if-exists=../../.env scripts/create-table.ts",
+    "consumer": "tsx --env-file-if-exists=../../.env src/consumer/index.ts",
+    "clickhouse:create": "tsx --env-file-if-exists=../../.env scripts/create-clickhouse-schema.ts"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "3.1101.0",
@@ -20,6 +22,7 @@
     "@urlgen/shared": "workspace:*",
     "fastify": "5.11.0",
     "ioredis": "6.0.0",
+    "pino": "10.3.1",
     "zod": "4.4.3"
   },
   "devDependencies": {
