@@ -488,10 +488,10 @@ describe("click tracking", () => {
   });
 
   it.each([
-    ["a disabled link", { s: "disabled" } as Partial<KvLinkValue>],
-    ["an expired link", { e: Date.now() - 1000 } as Partial<KvLinkValue>],
-    ["a deleted link", { s: "deleted" } as Partial<KvLinkValue>],
-    ["a poisoned target", { u: "javascript:alert(1)" } as Partial<KvLinkValue>],
+    ["a disabled link", { s: "disabled" } satisfies Partial<KvLinkValue>],
+    ["an expired link", { e: Date.now() - 1000 } satisfies Partial<KvLinkValue>],
+    ["a deleted link", { s: "deleted" } satisfies Partial<KvLinkValue>],
+    ["a poisoned target", { u: "javascript:alert(1)" } satisfies Partial<KvLinkValue>],
   ])("records nothing for %s", async (_label, blob) => {
     forbidOrigin();
     const slug = await seed(blob);

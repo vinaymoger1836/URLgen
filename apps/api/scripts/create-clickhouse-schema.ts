@@ -34,14 +34,14 @@ async function main(): Promise<void> {
 
   try {
     const statements = splitStatements(schema);
-    console.log(`Applying ${String(statements.length)} statements to ${config.CLICKHOUSE_URL}`);
+    console.warn(`Applying ${String(statements.length)} statements to ${config.CLICKHOUSE_URL}`);
 
     for (const statement of statements) {
       await client.command({ query: statement });
-      console.log(`  ok: ${summarize(statement)}`);
+      console.warn(`  ok: ${summarize(statement)}`);
     }
 
-    console.log(`Schema applied to database "${config.CLICKHOUSE_DATABASE}".`);
+    console.warn(`Schema applied to database "${config.CLICKHOUSE_DATABASE}".`);
   } finally {
     await client.close();
   }

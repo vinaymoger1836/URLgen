@@ -116,7 +116,7 @@ export async function trackClick(env: Env, event: ClickEvent): Promise<void> {
  * spreading an empty object is how an absent field stays genuinely absent.
  */
 function optional<K extends string>(key: K, value: string | undefined): Record<K, string> | object {
-  return value === undefined ? {} : ({ [key]: value } as Record<K, string>);
+  return value === undefined ? {} : { [key]: value };
 }
 
 /** Narrows a `request.cf` field, which the runtime types as `unknown`-ish. */

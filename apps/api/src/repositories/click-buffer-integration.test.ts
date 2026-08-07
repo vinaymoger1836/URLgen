@@ -17,7 +17,7 @@
  * parallel runs cannot collide.
  */
 
-import { Redis } from "ioredis";
+import type { Redis } from "ioredis";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 import type { ClickRow } from "../analytics/click-row.js";
@@ -61,7 +61,8 @@ describe.skipIf(url === undefined)("RedisClickBuffer (integration)", () => {
 
     counter += 1;
     prefix = `urlgen-test:${String(Date.now())}:${String(counter)}`;
-    await redis.del(...Object.values(clickKeys(prefix)));
+    const keys = clickKeys(prefix);
+    await redis.del(keys.buffer, keys.inflight, keys.dropped);
   });
 
   afterAll(async () => {

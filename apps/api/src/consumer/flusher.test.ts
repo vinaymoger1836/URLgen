@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, type Mock } from "vitest";
 
 import type { ClickRow } from "../analytics/click-row.js";
 import { clickBatchToken, type ClickInserter } from "../repositories/clickhouse.js";
@@ -23,8 +23,17 @@ function row(id: string): ClickRow {
   };
 }
 
-function silentLogger(): FlusherLogger {
-  return { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+/**
+ * A logger plus direct handles on its mocks.
+ *
+ * The handles exist so assertions never reference `logger.error` off the object —
+ * `@typescript-eslint/unbound-method` rightly objects to pulling a method away
+ * from its receiver, even when the receiver is a mock that does not use `this`.
+ */
+function silentLogger(): { logger: FlusherLogger; errors: Mock; warns: Mock } {
+  const errors = vi.fn();
+  const warns = vi.fn();
+  return { logger: { info: vi.fn(), warn: warns, error: errors }, errors, warns };
 }
 
 /** Records what it was asked to insert. Fails on demand. */
@@ -58,13 +67,13 @@ interface Harness {
   buffer: InMemoryClickBuffer;
   inserter: RecordingInserter;
   flusher: ClickFlusher;
-  logger: FlusherLogger;
+  errors: Mock;
 }
 
 function harness(options: { batchSize?: number; lease?: FlushLease } = {}): Harness {
   const buffer = new InMemoryClickBuffer();
   const inserter = new RecordingInserter();
-  const logger = silentLogger();
+  const { logger, errors } = silentLogger();
   const flusher = new ClickFlusher({
     buffer,
     inserter,
@@ -74,7 +83,7 @@ function harness(options: { batchSize?: number; lease?: FlushLease } = {}): Harn
     ...(options.lease !== undefined ? { lease: options.lease } : {}),
   });
 
-  return { buffer, inserter, flusher, logger };
+  return { buffer, inserter, flusher, errors };
 }
 
 async function fill(buffer: InMemoryClickBuffer, count: number, offset = 0): Promise<void> {
@@ -198,13 +207,13 @@ describe("ClickFlusher", () => {
     });
 
     it("logs the failure without swallowing it into silence", async () => {
-      const { buffer, flusher, inserter, logger } = harness();
+      const { buffer, flusher, inserter, errors } = harness();
       await fill(buffer, 1);
       inserter.failNext = 1;
 
       await flusher.flush();
 
-      expect(logger.error).toHaveBeenCalledTimes(1);
+      expect(errors).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -240,25 +249,23 @@ describe("ClickFlusher", () => {
     });
 
     it("releases the lease so the next process can take over immediately", async () => {
-      const lease: FlushLease = {
-        acquire: vi.fn(() => Promise.resolve(true)),
-        release: vi.fn(() => Promise.resolve()),
-      };
+      const release = vi.fn(() => Promise.resolve());
+      const lease: FlushLease = { acquire: () => Promise.resolve(true), release };
       const { flusher } = harness({ lease });
 
       await flusher.stop();
 
-      expect(lease.release).toHaveBeenCalledTimes(1);
+      expect(release).toHaveBeenCalledTimes(1);
     });
 
     it("survives a final flush that fails", async () => {
-      const { buffer, flusher, inserter, logger } = harness();
+      const { buffer, flusher, inserter, errors } = harness();
       await fill(buffer, 1);
       inserter.failNext = 1;
 
       await expect(flusher.stop()).resolves.toBeUndefined();
 
-      expect(logger.error).toHaveBeenCalled();
+      expect(errors).toHaveBeenCalled();
       expect(buffer.inflight).toHaveLength(1);
     });
   });
@@ -287,7 +294,7 @@ describe("ClickFlusher", () => {
       const flusher = new ClickFlusher({
         buffer: poisoned,
         inserter,
-        logger: silentLogger(),
+        logger: silentLogger().logger,
         batchSize: 3,
         intervalMs: 60_000,
       });
@@ -334,7 +341,7 @@ describe("ClickFlusher", () => {
         const flusher = new ClickFlusher({
           buffer,
           inserter,
-          logger: silentLogger(),
+          logger: silentLogger().logger,
           batchSize: 3,
           intervalMs: 1000,
         });

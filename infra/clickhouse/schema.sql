@@ -67,6 +67,16 @@ SETTINGS
 -- counts do not sum — adding two days of uniques double-counts anyone who came
 -- both days. The intermediate HyperLogLog state merges correctly; a stored integer
 -- would not.
+--
+-- Both rollups carry their own `non_replicated_deduplication_window`, and that is
+-- not decoration. A materialized view is a separate INSERT into a separate table:
+-- when a replayed batch is deduplicated at `clicks`, the MV's insert is a different
+-- block into a table with its own dedup state. Without a window here the raw table
+-- deduplicates correctly while the rollups count the batch twice — and since the
+-- dashboard reads the rollups, it would quietly report double the real number while
+-- the source of truth was right. The other half of the fix is
+-- `deduplicate_blocks_in_dependent_materialized_views=1` on the insert; see
+-- `clickhouse.ts`. Both are required, and neither is the default.
 
 -- Hourly: the time-series panel. No dimensions, so it stays tiny.
 CREATE TABLE IF NOT EXISTS {db}.clicks_hourly
@@ -78,7 +88,8 @@ CREATE TABLE IF NOT EXISTS {db}.clicks_hourly
 )
 ENGINE = AggregatingMergeTree
 PARTITION BY toYYYYMM(hour)
-ORDER BY (slug, hour);
+ORDER BY (slug, hour)
+SETTINGS non_replicated_deduplication_window = 1000;
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS {db}.clicks_hourly_mv
 TO {db}.clicks_hourly
@@ -109,7 +120,8 @@ CREATE TABLE IF NOT EXISTS {db}.clicks_daily
 )
 ENGINE = AggregatingMergeTree
 PARTITION BY toYYYYMM(day)
-ORDER BY (slug, day, country, device_type, browser, os, referrer_host);
+ORDER BY (slug, day, country, device_type, browser, os, referrer_host)
+SETTINGS non_replicated_deduplication_window = 1000;
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS {db}.clicks_daily_mv
 TO {db}.clicks_daily

@@ -97,7 +97,18 @@ export class ClickHouseClickInserter implements ClickInserter {
       table: CLICKS_TABLE,
       values: rows.map(toClickHouseRow),
       format: "JSONEachRow",
-      clickhouse_settings: { insert_deduplication_token: token },
+      clickhouse_settings: {
+        insert_deduplication_token: token,
+        /* Deduplication does NOT reach materialized views by default, and the way
+           it fails is nasty: the raw table drops the replayed block while each MV
+           writes its own, separate block into its own table and counts the batch
+           again. The dashboard reads the rollups, so it would report double the
+           real number while `clicks` — the thing anyone would check — was correct.
+           This setting propagates the token to the dependent inserts; the rollup
+           tables also need their own dedup window for it to have anywhere to
+           record. Caught by an integration test, not by reading the docs. */
+        deduplicate_blocks_in_dependent_materialized_views: 1,
+      },
     });
   }
 

@@ -150,7 +150,7 @@ function buildLease(config: Config, redis: Redis | undefined): FlushLease | unde
 
   return new RedisFlushLease({
     redis,
-    ownerId: `${process.env["HOSTNAME"] ?? "local"}:${process.pid}`,
+    ownerId: `${process.env.HOSTNAME ?? "local"}:${process.pid}`,
     /* Three cycles of slack, floored, so a fast interval cannot produce a lease
        that lapses while a slow ClickHouse insert is still in flight. */
     ttlMs: Math.max(config.CLICK_FLUSH_INTERVAL_MS * 3, 30_000),
