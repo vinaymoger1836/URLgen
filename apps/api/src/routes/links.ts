@@ -4,12 +4,12 @@ import {
   assessUrlSafety,
   createLinkRequestSchema,
   isWellFormedSlug,
-  linkResponseSchema,
+  linkApiResponseSchema,
   updateLinkRequestSchema,
   urlDedupHash,
   type ErrorCode,
+  type LinkApiResponse,
   type LinkRecord,
-  type LinkResponse,
   type LinkSummary,
   type UrlSafetyIssue,
   type UrlSafetyResult,
@@ -102,11 +102,7 @@ export function registerLinkRoutes(app: FastifyInstance, options: LinkRoutesOpti
     if (existingSlug !== undefined) {
       const existing = await repository.findBySlug(existingSlug);
       if (existing?.status === "active" && !isExpired(existing)) {
-        return reply.code(200).send({
-          ...toResponse(existing),
-          shortUrl: shortUrlFor(config.SHORT_DOMAIN, existing.slug),
-          deduplicated: true,
-        });
+        return reply.code(200).send(toResponse(existing, config.SHORT_DOMAIN, true));
       }
     }
 
@@ -127,11 +123,7 @@ export function registerLinkRoutes(app: FastifyInstance, options: LinkRoutesOpti
         edgeCache.put(record.slug, toKvLinkValue(record)),
       );
 
-      return reply.code(201).send({
-        ...toResponse(record),
-        shortUrl: shortUrlFor(config.SHORT_DOMAIN, record.slug),
-        deduplicated: false,
-      });
+      return reply.code(201).send(toResponse(record, config.SHORT_DOMAIN, false));
     } catch (error) {
       if (error instanceof SlugUnavailableError) {
         return sendError(reply, "slug_taken", "That custom slug is already in use");
@@ -149,10 +141,7 @@ export function registerLinkRoutes(app: FastifyInstance, options: LinkRoutesOpti
     if (record === undefined) {
       return sendError(reply, "link_not_found", "No such link");
     }
-    return reply.send({
-      ...toResponse(record),
-      shortUrl: shortUrlFor(config.SHORT_DOMAIN, record.slug),
-    });
+    return reply.send(toResponse(record, config.SHORT_DOMAIN));
   });
 
   app.get<{ Querystring: { limit?: string; cursor?: string } }>(
@@ -172,10 +161,7 @@ export function registerLinkRoutes(app: FastifyInstance, options: LinkRoutesOpti
       return reply.send({
         items: page.items
           .filter((item) => item.status !== "deleted")
-          .map((item) => ({
-            ...toResponse(item),
-            shortUrl: shortUrlFor(config.SHORT_DOMAIN, item.slug),
-          })),
+          .map((item) => toResponse(item, config.SHORT_DOMAIN)),
         ...(page.cursor !== undefined ? { cursor: page.cursor } : {}),
       });
     },
@@ -234,10 +220,7 @@ export function registerLinkRoutes(app: FastifyInstance, options: LinkRoutesOpti
         edgeCache.put(updated.slug, toKvLinkValue(updated)),
       );
 
-      return reply.send({
-        ...toResponse(updated),
-        shortUrl: shortUrlFor(config.SHORT_DOMAIN, updated.slug),
-      });
+      return reply.send(toResponse(updated, config.SHORT_DOMAIN));
     } catch (error) {
       if (error instanceof LinkNotFoundError) {
         return sendError(reply, "link_not_found", "No such link");
@@ -325,13 +308,22 @@ async function loadOwnedLink(
 }
 
 /**
- * Strips internal bookkeeping before a record goes over the wire.
+ * Strips internal bookkeeping and adds what only the API knows.
  *
  * Takes a summary too, because a listing is served from a projected index and
  * never has `urlHash` to begin with. Parsing rather than destructuring means the
  * strip is enforced by the schema: any future internal field is dropped unless it
- * is explicitly added to the response shape.
+ * is explicitly added to the response shape — and the dashboard parses the same
+ * schema on the way in, so a change on either side has to be made on both.
  */
-function toResponse(record: LinkRecord | LinkSummary): LinkResponse {
-  return linkResponseSchema.parse(record);
+function toResponse(
+  record: LinkRecord | LinkSummary,
+  shortDomain: string,
+  deduplicated?: boolean,
+): LinkApiResponse {
+  return linkApiResponseSchema.parse({
+    ...record,
+    shortUrl: shortUrlFor(shortDomain, record.slug),
+    ...(deduplicated !== undefined ? { deduplicated } : {}),
+  });
 }

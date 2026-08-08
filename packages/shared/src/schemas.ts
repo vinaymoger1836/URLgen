@@ -102,6 +102,25 @@ export const linkSummarySchema = linkRecordSchema.omit({ urlHash: true });
 /** What the API returns to a caller: the record minus internal bookkeeping. */
 export const linkResponseSchema = linkSummarySchema;
 
+/**
+ * A link as it goes over the wire, including the fields only the API can supply.
+ *
+ * `shortUrl` depends on the configured short domain and `deduplicated` on what the
+ * request did, so neither belongs on the stored record. Defined here rather than
+ * assembled ad hoc at each send site so the dashboard can parse exactly what the
+ * API promised to produce — one schema, both ends, no drift.
+ */
+export const linkApiResponseSchema = linkResponseSchema.extend({
+  shortUrl: z.string(),
+  /** Present on create: true when an existing link was returned instead of a new one. */
+  deduplicated: z.boolean().optional(),
+});
+
+export const linkListResponseSchema = z.object({
+  items: z.array(linkApiResponseSchema),
+  cursor: z.string().optional(),
+});
+
 export const updateLinkRequestSchema = z
   .object({
     url: targetUrlSchema.optional(),
@@ -181,5 +200,7 @@ export type UpdateLinkRequest = z.infer<typeof updateLinkRequestSchema>;
 export type LinkRecord = z.infer<typeof linkRecordSchema>;
 export type LinkSummary = z.infer<typeof linkSummarySchema>;
 export type LinkResponse = z.infer<typeof linkResponseSchema>;
+export type LinkApiResponse = z.infer<typeof linkApiResponseSchema>;
+export type LinkListResponse = z.infer<typeof linkListResponseSchema>;
 export type LinkStatus = z.infer<typeof linkStatusSchema>;
 export type KvLinkValue = z.infer<typeof kvLinkValueSchema>;

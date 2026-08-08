@@ -143,7 +143,11 @@ const envSchema = z
       .refine(
         (origins) => origins.every(isOrigin),
         "CORS_ORIGINS must be a comma-separated list of scheme://host[:port] origins",
-      ),
+      )
+      /* Canonicalized after validation, because the comparison against the `Origin`
+         header is an exact string match: `https://x.test/` passes the check above
+         and would then never match anything a browser sends. */
+      .transform((origins) => origins.map((origin) => parseUrl(origin)?.origin ?? origin)),
   })
   .superRefine((env, ctx) => {
     const cloudflareSet = CLOUDFLARE_KEYS.filter((key) => env[key] !== undefined);
