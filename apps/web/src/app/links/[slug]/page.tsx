@@ -88,20 +88,38 @@ export default function LinkAnalyticsPage() {
         )}
       </div>
 
+      {/* An em dash, not a zero, until the numbers actually arrive. A tile reading
+          "0 clicks" while the panel underneath it says the API is unreachable is
+          the same failure the panels have error states to prevent — the reader has
+          no way to tell "none" from "unknown", and the confident number is the one
+          they will believe. */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <StatTile label="Clicks" value={data?.totals.clicks ?? 0} hero hint={rangeLabel} />
+        <StatTile
+          label="Clicks"
+          value={data?.totals.clicks ?? "—"}
+          hero
+          hint={analytics.error === undefined ? rangeLabel : "Unavailable"}
+        />
         <StatTile
           label="Unique visitors"
-          value={data?.totals.visitors ?? 0}
-          hint="Salted daily hash, never an IP"
+          value={data?.totals.visitors ?? "—"}
+          hint={
+            analytics.error === undefined ? "Salted daily hash, never an IP" : "Unavailable"
+          }
         />
         <StatTile
           label="Top country"
-          value={data?.breakdowns.country[0]?.clicks ?? 0}
-          hint={
+          value={
             data?.breakdowns.country[0]?.key === undefined
-              ? "No data yet"
+              ? "—"
               : formatBreakdownKey("country", data.breakdowns.country[0].key)
+          }
+          hint={
+            analytics.error !== undefined
+              ? "Unavailable"
+              : data?.breakdowns.country[0] === undefined
+                ? "No data yet"
+                : `${data.breakdowns.country[0].clicks.toLocaleString("en-US")} clicks`
           }
         />
       </div>

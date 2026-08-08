@@ -76,9 +76,18 @@ describe("granularityForSpan", () => {
   it("picks a bucket that keeps the chart readable", () => {
     expect(granularityForSpan(6 * HOUR)).toBe("15m");
     expect(granularityForSpan(24 * HOUR)).toBe("hour");
-    expect(granularityForSpan(7 * DAY)).toBe("hour");
     expect(granularityForSpan(30 * DAY)).toBe("day");
     expect(granularityForSpan(90 * DAY)).toBe("day");
+  });
+
+  it("switches to days once a time-only axis label stops identifying a bucket", () => {
+    /* An hour bucket is labelled "14:00", which is unique only while the window is
+       about a day wide. A 7-day range of hour buckets has to be thinned to fit the
+       axis, and sampling every twentieth bucket makes the labels count *backwards*
+       four hours at a time. Days keep every label a distinct date. */
+    expect(granularityForSpan(2 * DAY)).toBe("hour");
+    expect(granularityForSpan(2 * DAY + 1)).toBe("day");
+    expect(granularityForSpan(7 * DAY)).toBe("day");
   });
 });
 

@@ -68,12 +68,24 @@ export const RAW_RETENTION_MS = 88 * MS_PER_DAY;
 /** The widest custom window accepted, so one query cannot scan an unbounded range. */
 export const MAX_ANALYTICS_SPAN_MS = 366 * MS_PER_DAY;
 
-/** Chosen granularity for a span, sized to keep a chart between ~24 and ~350 points. */
+/**
+ * Bucket size for a span.
+ *
+ * The thresholds are set by what an axis label can say without ambiguity, not by
+ * how much detail the store could supply. An hour bucket is labelled with a time
+ * — "14:00" — which only identifies a bucket while the window stays inside about a
+ * day. Past that, hour buckets have to be thinned to fit the axis, and thinning
+ * 168 of them to eight means sampling every twentieth: the labels then read 00:00,
+ * 20:00, 16:00, losing four hours a tick and looking, correctly but uselessly, like
+ * time running backwards. Day buckets past two days keep every label a distinct
+ * date. (Observed on a real 7-day render, which is the only way this shows up —
+ * every individual bucket was right.)
+ */
 export function granularityForSpan(spanMs: number): AnalyticsGranularity {
   if (spanMs <= 12 * MS_PER_HOUR) {
     return "15m";
   }
-  if (spanMs <= 14 * MS_PER_DAY) {
+  if (spanMs <= 2 * MS_PER_DAY) {
     return "hour";
   }
   return "day";

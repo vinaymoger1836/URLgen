@@ -70,7 +70,14 @@ export function TimeSeries({ rows, timeZone }: TimeSeriesProps) {
       ) : (
         <div className="h-72">
           <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={rows} margin={{ top: 8, right: 8, bottom: 0, left: 0 }} accessibilityLayer>
+            {/* The right margin is not decoration: the final tick sits on the plot's
+                right edge, and its label is centred on it — with a small margin the
+                last date renders as "8 Au". */}
+            <ComposedChart
+              data={rows}
+              margin={{ top: 8, right: 24, bottom: 0, left: 0 }}
+              accessibilityLayer
+            >
               {/* Horizontal only, solid, one step off the surface: a grid is a
                   reading aid, not data, and dashes read as "threshold". */}
               <CartesianGrid
