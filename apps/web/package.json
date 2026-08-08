@@ -5,8 +5,8 @@
   "type": "module",
   "description": "Next.js dashboard — link management and analytics",
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "dev": "next dev --webpack",
+    "build": "next build --webpack",
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"

@@ -303,9 +303,7 @@ export class ClickHouseAnalyticsStore implements AnalyticsStore {
   }
 }
 
-interface QueryParams {
-  [key: string]: string | number | readonly string[];
-}
+type QueryParams = Record<string, string | number | readonly string[]>;
 
 function windowParams(slug: string, window: AnalyticsWindow): QueryParams {
   return { slug, from: window.fromMs, to: window.toMs, tz: window.timeZone };

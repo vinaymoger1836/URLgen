@@ -17,6 +17,15 @@ function rows(...clicks: number[]): AnalyticsBreakdownRow[] {
   }));
 }
 
+/** `noUncheckedIndexedAccess` types every element as possibly missing; these are not. */
+function at(panel: AnalyticsBreakdownRow[], index: number): AnalyticsBreakdownRow {
+  const row = panel[index];
+  if (row === undefined) {
+    throw new Error(`fixture has no row at ${String(index)}`);
+  }
+  return row;
+}
+
 describe("toChartRows", () => {
   it("labels each bucket in the window's zone and keeps the instant", () => {
     const chartRows = toChartRows(
@@ -67,18 +76,18 @@ describe("barWidthPercent", () => {
     /* Scaled to the total, a long tail would render every bar as a sliver and the
        shape of the distribution would be invisible. */
     const panel = rows(10, 5, 1);
-    expect(barWidthPercent(panel[0] as AnalyticsBreakdownRow, panel)).toBe(100);
-    expect(barWidthPercent(panel[1] as AnalyticsBreakdownRow, panel)).toBe(50);
+    expect(barWidthPercent(at(panel, 0), panel)).toBe(100);
+    expect(barWidthPercent(at(panel, 1), panel)).toBe(50);
   });
 
   it("keeps a tiny row visible rather than showing nothing", () => {
     const panel = rows(1000, 1);
-    expect(barWidthPercent(panel[1] as AnalyticsBreakdownRow, panel)).toBe(2);
+    expect(barWidthPercent(at(panel, 1), panel)).toBe(2);
   });
 
   it("does not divide by zero when every row is zero", () => {
     const panel = rows(0, 0);
-    expect(barWidthPercent(panel[0] as AnalyticsBreakdownRow, panel)).toBe(0);
+    expect(barWidthPercent(at(panel, 0), panel)).toBe(0);
   });
 });
 

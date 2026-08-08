@@ -99,7 +99,7 @@ export default function LinkAnalyticsPage() {
           label="Top country"
           value={data?.breakdowns.country[0]?.clicks ?? 0}
           hint={
-            data?.breakdowns.country[0] === undefined
+            data?.breakdowns.country[0]?.key === undefined
               ? "No data yet"
               : formatBreakdownKey("country", data.breakdowns.country[0].key)
           }
@@ -140,7 +140,7 @@ export default function LinkAnalyticsPage() {
             isRefreshing={analytics.isRefreshing}
             error={analytics.error}
             onRetry={analytics.refresh}
-            isEmpty={data !== undefined && data.breakdowns[dimension].length === 0}
+            isEmpty={data?.breakdowns[dimension].length === 0}
           >
             {data !== undefined && (
               <Breakdown dimension={dimension} rows={data.breakdowns[dimension]} />

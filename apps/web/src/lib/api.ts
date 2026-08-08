@@ -119,20 +119,28 @@ async function describeFailure(response: Response): Promise<ApiError> {
   const { code, message } = body.error;
   const parsedMessage = typeof message === "string" ? message : fallback;
 
-  return typeof code === "string"
-    ? new ApiError(parsedMessage, response.status, code as ErrorCode)
-    : new ApiError(parsedMessage, response.status);
+  return code === undefined
+    ? new ApiError(parsedMessage, response.status)
+    : new ApiError(parsedMessage, response.status, code);
 }
 
+/**
+ * `code` is narrowed to `ErrorCode` without checking it against the list.
+ *
+ * The API is the only thing that produces this envelope and the vocabulary is
+ * shared, so a string here is one of those codes. Validating it would mean
+ * rejecting an error response because the error code was new — turning a
+ * forward-compatible field into a hard failure on the path that is already failing.
+ */
 function isErrorEnvelope(
   value: unknown,
-): value is { error: { code?: unknown; message?: unknown } } {
+): value is { error: { code?: ErrorCode; message?: unknown } } {
   return (
     typeof value === "object" &&
     value !== null &&
     "error" in value &&
-    typeof (value as { error: unknown }).error === "object" &&
-    (value as { error: unknown }).error !== null
+    typeof value.error === "object" &&
+    value.error !== null
   );
 }
 

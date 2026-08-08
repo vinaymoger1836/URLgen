@@ -73,7 +73,7 @@ export default function LinksPage() {
         isRefreshing={isRefreshing}
         error={error}
         onRetry={refresh}
-        isEmpty={data !== undefined && data.links.length === 0}
+        isEmpty={data?.links.length === 0}
         emptyMessage="No links yet — shorten one above."
       >
         <ul className="divide-y divide-hairline">
