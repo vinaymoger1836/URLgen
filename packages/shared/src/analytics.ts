@@ -106,11 +106,8 @@ export const analyticsQuerySchema = z
     to: timestampSchema.optional(),
     tz: timeZoneSchema.optional(),
   })
-  .superRefine((query, ctx) => {
-    const hasFrom = query.from !== undefined;
-    const hasTo = query.to !== undefined;
-
-    if (hasFrom !== hasTo) {
+  .superRefine(({ from, to }, ctx) => {
+    if ((from === undefined) !== (to === undefined)) {
       ctx.addIssue({
         code: "custom",
         message: "from and to must be provided together",
@@ -118,21 +115,20 @@ export const analyticsQuerySchema = z
       return;
     }
 
-    if (!hasFrom) {
+    if (from === undefined || to === undefined) {
       return;
     }
 
-    /* Non-null asserted through the guard above; parsed by `timestampSchema`, so
-       `Date.parse` cannot be NaN here. */
-    const from = Date.parse(query.from as string);
-    const to = Date.parse(query.to as string);
+    /* Both have already been through `timestampSchema`, so neither parse is NaN. */
+    const fromMs = Date.parse(from);
+    const toMs = Date.parse(to);
 
-    if (to <= from) {
+    if (toMs <= fromMs) {
       ctx.addIssue({ code: "custom", message: "to must be after from" });
       return;
     }
 
-    if (to - from > MAX_ANALYTICS_SPAN_MS) {
+    if (toMs - fromMs > MAX_ANALYTICS_SPAN_MS) {
       ctx.addIssue({ code: "custom", message: "the requested range is too long" });
     }
   });
