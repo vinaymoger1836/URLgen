@@ -35,11 +35,24 @@ let store: ClickHouseAnalyticsStore;
 let slugCounter = 0;
 let currentSlug = "";
 
-const DAY_START = Date.parse("2026-08-07T00:00:00.000Z");
-const DAY_END = Date.parse("2026-08-08T00:00:00.000Z");
+const HOUR = 3_600_000;
+const DAY = 86_400_000;
 
-function at(iso: string): number {
-  return Date.parse(iso);
+/**
+ * Midnight UTC today, and every fixture is an offset from it.
+ *
+ * Not a hardcoded date, because `clicks` carries `TTL ts + 90 DAY`: a fixture
+ * pinned to a literal timestamp works until ninety days after it was written, at
+ * which point a background merge starts deleting the rows mid-test and the failure
+ * looks like a query bug. Anchoring to the current day makes the rows permanently
+ * fresh while keeping every offset — and so every bucket assertion — exact.
+ */
+const DAY_START = Math.floor(Date.now() / DAY) * DAY;
+const DAY_END = DAY_START + DAY;
+
+/** An instant this many milliseconds into today, UTC. */
+function at(offsetMs: number): number {
+  return DAY_START + offsetMs;
 }
 
 function row(overrides: Partial<ClickRow> = {}): ClickRow {
@@ -48,7 +61,7 @@ function row(overrides: Partial<ClickRow> = {}): ClickRow {
        across tests would have the server deduplicate the second insert away. */
     eventId: `${currentSlug}-${String(Math.random())}`,
     slug: currentSlug,
-    ts: at("2026-08-07T10:15:00.000Z"),
+    ts: at(10 * HOUR + 15 * 60_000),
     country: "IN",
     city: "Bengaluru",
     timezone: "Asia/Kolkata",
@@ -133,10 +146,10 @@ describe.skipIf(url === undefined)("ClickHouseAnalyticsStore (integration)", () 
 
     it("excludes clicks outside the window at both ends", async () => {
       await insert([
-        row({ ts: at("2026-08-06T23:59:59.000Z") }),
-        row({ ts: at("2026-08-07T00:00:00.000Z") }),
-        row({ ts: at("2026-08-07T23:59:59.999Z") }),
-        row({ ts: at("2026-08-08T00:00:00.000Z") }),
+        row({ ts: at(-1 * 1_000) }),
+        row({ ts: at(0) }),
+        row({ ts: at(23 * HOUR + 59 * 60_000 + 59 * 1_000 + 999) }),
+        row({ ts: at(1 * DAY) }),
       ]);
 
       const data = await store.fetch(currentSlug, windowOf());
@@ -146,15 +159,15 @@ describe.skipIf(url === undefined)("ClickHouseAnalyticsStore (integration)", () 
 
     it("buckets the series by hour", async () => {
       await insert([
-        row({ ts: at("2026-08-07T10:15:00.000Z") }),
-        row({ ts: at("2026-08-07T10:45:00.000Z") }),
-        row({ ts: at("2026-08-07T11:05:00.000Z") }),
+        row({ ts: at(10 * HOUR + 15 * 60_000) }),
+        row({ ts: at(10 * HOUR + 45 * 60_000) }),
+        row({ ts: at(11 * HOUR + 5 * 60_000) }),
       ]);
 
       const data = await store.fetch(currentSlug, windowOf());
       expect(data.series).toEqual([
-        { tsMs: at("2026-08-07T10:00:00.000Z"), clicks: 2, visitors: 1 },
-        { tsMs: at("2026-08-07T11:00:00.000Z"), clicks: 1, visitors: 1 },
+        { tsMs: at(10 * HOUR), clicks: 2, visitors: 1 },
+        { tsMs: at(11 * HOUR), clicks: 1, visitors: 1 },
       ]);
     });
 
@@ -163,8 +176,8 @@ describe.skipIf(url === undefined)("ClickHouseAnalyticsStore (integration)", () 
          would file it under the 7th and show the viewer traffic on a day they were
          asleep for. */
       await insert([
-        row({ ts: at("2026-08-07T17:00:00.000Z") }),
-        row({ ts: at("2026-08-07T19:00:00.000Z") }),
+        row({ ts: at(17 * HOUR) }),
+        row({ ts: at(19 * HOUR) }),
       ]);
 
       const data = await store.fetch(
@@ -172,14 +185,14 @@ describe.skipIf(url === undefined)("ClickHouseAnalyticsStore (integration)", () 
         windowOf({
           granularity: "day",
           timeZone: "Asia/Kolkata",
-          fromMs: at("2026-08-06T18:30:00.000Z"),
-          toMs: at("2026-08-08T18:30:00.000Z"),
+          fromMs: at(-(5 * HOUR + 30 * 60_000)),
+          toMs: at(1 * DAY + 18 * HOUR + 30 * 60_000),
         }),
       );
 
       expect(data.series).toEqual([
-        { tsMs: at("2026-08-06T18:30:00.000Z"), clicks: 1, visitors: 1 },
-        { tsMs: at("2026-08-07T18:30:00.000Z"), clicks: 1, visitors: 1 },
+        { tsMs: at(-(5 * HOUR + 30 * 60_000)), clicks: 1, visitors: 1 },
+        { tsMs: at(18 * HOUR + 30 * 60_000), clicks: 1, visitors: 1 },
       ]);
     });
 
@@ -240,9 +253,9 @@ describe.skipIf(url === undefined)("ClickHouseAnalyticsStore (integration)", () 
   describe("rollup source", () => {
     it("agrees with the raw table on click totals", async () => {
       await insert([
-        row({ ts: at("2026-08-07T10:15:00.000Z") }),
-        row({ ts: at("2026-08-07T11:15:00.000Z") }),
-        row({ ts: at("2026-08-07T11:45:00.000Z") }),
+        row({ ts: at(10 * HOUR + 15 * 60_000) }),
+        row({ ts: at(11 * HOUR + 15 * 60_000) }),
+        row({ ts: at(11 * HOUR + 45 * 60_000) }),
       ]);
 
       const raw = await store.fetch(currentSlug, windowOf({ source: "raw" }));
@@ -256,8 +269,8 @@ describe.skipIf(url === undefined)("ClickHouseAnalyticsStore (integration)", () 
          mistake to make against this schema; merging the HyperLogLog states gives
          the 1 that is true. */
       await insert([
-        row({ ts: at("2026-08-07T10:15:00.000Z"), visitorHash: "same-person" }),
-        row({ ts: at("2026-08-07T11:15:00.000Z"), visitorHash: "same-person" }),
+        row({ ts: at(10 * HOUR + 15 * 60_000), visitorHash: "same-person" }),
+        row({ ts: at(11 * HOUR + 15 * 60_000), visitorHash: "same-person" }),
       ]);
 
       const rollup = await store.fetch(currentSlug, windowOf({ source: "rollup" }));
@@ -286,11 +299,11 @@ describe.skipIf(url === undefined)("ClickHouseAnalyticsStore (integration)", () 
     it("includes the hour bucket that straddles the window's start", async () => {
       /* The rollup is keyed by UTC hour, so a window starting at 10:30 has to snap
          down to the 10:00 bucket or it drops clicks that are inside the window. */
-      await insert([row({ ts: at("2026-08-07T10:45:00.000Z") })]);
+      await insert([row({ ts: at(10 * HOUR + 45 * 60_000) })]);
 
       const data = await store.fetch(
         currentSlug,
-        windowOf({ source: "rollup", fromMs: at("2026-08-07T10:30:00.000Z") }),
+        windowOf({ source: "rollup", fromMs: at(10 * HOUR + 30 * 60_000) }),
       );
       expect(data.totals.clicks).toBe(1);
     });

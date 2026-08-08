@@ -4,7 +4,17 @@ import { describe, expect, it } from "vitest";
 
 import { readCachedLink, writeBackLink } from "./kv.js";
 
-const NOW = Date.parse("2026-08-06T12:00:00.000Z");
+/**
+ * Expiries are relative to the real clock, not a fixed date.
+ *
+ * `writeBackLink` decides whether an entry is worth a KV write by comparing the
+ * blob's expiry against `Date.now()`, and refuses anything inside KV's 60-second
+ * floor. A hardcoded timestamp works until the day it goes past — this file
+ * originally pinned one a day ahead of when it was written, and the round-trip test
+ * started failing two days later with the write silently skipped. A fixture that
+ * expires is a test that fails for the calendar rather than for the code.
+ */
+const ONE_DAY_MS = 86_400_000;
 
 let counter = 0;
 /** A slug no other test in this file is using, so writes cannot leak between cases. */
@@ -20,7 +30,11 @@ describe("readCachedLink", () => {
 
   it("round-trips a value written by writeBackLink", async () => {
     const slug = uniqueSlug();
-    const value: KvLinkValue = { u: "https://example.com/x", s: "active", e: NOW + 86_400_000 };
+    const value: KvLinkValue = {
+      u: "https://example.com/x",
+      s: "active",
+      e: Date.now() + ONE_DAY_MS,
+    };
 
     await writeBackLink(env, slug, value);
 
