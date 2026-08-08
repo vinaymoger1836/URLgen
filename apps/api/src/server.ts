@@ -18,6 +18,7 @@ import {
   type AnalyticsCache,
 } from "./repositories/analytics-cache.js";
 import { createAnalyticsStore, type AnalyticsStore } from "./repositories/analytics-store.js";
+import { registerCors } from "./http/cors.js";
 import { createDocumentClient } from "./repositories/dynamo-client.js";
 import { DynamoLinkRepository } from "./repositories/dynamo-link-repository.js";
 import {
@@ -66,6 +67,8 @@ export function buildServer(
     /* Link creation payloads are tiny; refuse anything that clearly is not one. */
     bodyLimit: 16 * 1024,
   });
+
+  registerCors(app, config.CORS_ORIGINS);
 
   app.get("/health", () => ({
     status: "ok",

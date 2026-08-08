@@ -58,6 +58,26 @@ const booleanFlag = z
   .enum(["true", "false", "1", "0"])
   .transform((value) => value === "true" || value === "1");
 
+/**
+ * An origin, in the sense the `Origin` header uses: scheme, host, optional port,
+ * and nothing else. A trailing path is the giveaway that someone pasted a URL —
+ * and it would never match the header, so every request would be silently refused.
+ */
+function isOrigin(value: string): boolean {
+  const url = parseUrl(value);
+  return (
+    url !== undefined &&
+    ALLOWED_PROTOCOLS.includes(url.protocol) &&
+    url.hostname !== "" &&
+    url.pathname === "/" &&
+    url.search === "" &&
+    url.hash === "" &&
+    /* `new URL` normalizes away a missing path, so compare against what the browser
+       will actually send. */
+    value.replace(/\/$/, "") === url.origin
+  );
+}
+
 const envSchema = z
   .object({
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -107,6 +127,23 @@ const envSchema = z
     CLOUDFLARE_API_TOKEN: z.string().min(1).optional(),
 
     SHORT_DOMAIN: z.string().min(1).default("localhost:8787"),
+
+    /* Origins the dashboard may be served from. Comma-separated, exact matches
+       only — no wildcards and no pattern matching, because every CORS bypass
+       starts as a pattern that matched more than it was meant to. */
+    CORS_ORIGINS: z
+      .string()
+      .default("http://localhost:3000")
+      .transform((value) =>
+        value
+          .split(",")
+          .map((origin) => origin.trim())
+          .filter((origin) => origin.length > 0),
+      )
+      .refine(
+        (origins) => origins.every(isOrigin),
+        "CORS_ORIGINS must be a comma-separated list of scheme://host[:port] origins",
+      ),
   })
   .superRefine((env, ctx) => {
     const cloudflareSet = CLOUDFLARE_KEYS.filter((key) => env[key] !== undefined);
