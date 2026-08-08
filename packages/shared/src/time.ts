@@ -53,6 +53,11 @@ function partsFormatterFor(timeZone: string): Intl.DateTimeFormat {
  * "UTC" in any case, while ClickHouse's `toStartOfDay(t, tz)` wants the exact
  * database name. Normalizing here means the string that reaches a query has already
  * been through a lookup table rather than merely a regex.
+ *
+ * "Canonical" is the tz database's word, not "modern": this returns `Asia/Calcutta`
+ * for `Asia/Kolkata` on current Node, because the older spelling is the one IANA
+ * still marks canonical. Both are backward links to the same zone and ClickHouse
+ * resolves either, so the alias is harmless — but do not assert on the spelling.
  */
 export function normalizeTimeZone(timeZone: string): string | undefined {
   try {
@@ -152,15 +157,27 @@ export function addZonedDays(instant: number, days: number, timeZone: string): n
 }
 
 /**
- * The instant at which the hour containing `instant` begins in `timeZone`.
+ * The instant at which the current `stepMs` interval began, aligned to `timeZone`.
  *
- * Not the same as flooring to a whole hour of UTC: zones offset by 30 or 45 minutes
- * (India, Nepal, parts of Australia) put their hour boundaries at :30 and :45 past
- * the UTC hour, and a chart labelled in local time has to agree with its own axis.
+ * Not the same as flooring UTC: zones offset by 30 or 45 minutes (India, Nepal,
+ * parts of Australia) put their hour boundaries at :30 and :45 past the UTC hour,
+ * and a chart labelled in local time has to agree with its own axis.
+ *
+ * For steps of a day or more use `zonedStartOfDay` and `addZonedDays` instead — a
+ * calendar day is not a fixed number of milliseconds and this function assumes it is.
  */
-export function zonedStartOfHour(instant: number, timeZone: string): number {
+export function zonedStartOfInterval(
+  instant: number,
+  stepMs: number,
+  timeZone: string,
+): number {
   const offset = timeZoneOffsetMs(instant, timeZone);
-  return floorTo(instant + offset, MS_PER_HOUR) - offset;
+  return floorTo(instant + offset, stepMs) - offset;
+}
+
+/** The instant at which the hour containing `instant` begins in `timeZone`. */
+export function zonedStartOfHour(instant: number, timeZone: string): number {
+  return zonedStartOfInterval(instant, MS_PER_HOUR, timeZone);
 }
 
 /** Floors to a multiple of `step`, correctly for instants before 1970. */

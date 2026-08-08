@@ -7,10 +7,17 @@
 
 import { ERROR_STATUS, apiError } from "@urlgen/shared";
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from "fastify";
+import type { Redis } from "ioredis";
 import { ZodError } from "zod";
 
 import { buildClickPipeline, type ClickPipelineOverrides } from "./analytics/pipeline.js";
 import type { Config } from "./config.js";
+import {
+  NoopAnalyticsCache,
+  RedisAnalyticsCache,
+  type AnalyticsCache,
+} from "./repositories/analytics-cache.js";
+import { createAnalyticsStore, type AnalyticsStore } from "./repositories/analytics-store.js";
 import { createDocumentClient } from "./repositories/dynamo-client.js";
 import { DynamoLinkRepository } from "./repositories/dynamo-link-repository.js";
 import {
@@ -19,6 +26,7 @@ import {
   type EdgeCache,
 } from "./repositories/edge-cache.js";
 import type { LinkRepository } from "./repositories/link-repository.js";
+import { registerAnalyticsRoutes } from "./routes/analytics.js";
 import { registerIngestRoutes } from "./routes/ingest.js";
 import { registerInternalRoutes } from "./routes/internal.js";
 import { registerLinkRoutes } from "./routes/links.js";
@@ -34,6 +42,8 @@ export interface ServerDependencies extends ClickPipelineOverrides {
   linkRepository: LinkRepository;
   urlSafetyChecker: UrlSafetyChecker;
   edgeCache: EdgeCache;
+  analyticsStore: AnalyticsStore;
+  analyticsCache: AnalyticsCache;
 }
 
 /** Headers that may carry a credential and must never reach the logs. */
@@ -94,8 +104,17 @@ export function buildServer(
     overrides,
   );
 
+  const analyticsStore = overrides.analyticsStore ?? buildAnalyticsStore(config, app);
+  const analyticsCache = overrides.analyticsCache ?? buildAnalyticsCache(clicks.redis);
+
   registerLinkRoutes(app, { config, repository, safetyChecker, edgeCache });
   registerInternalRoutes(app, { config, repository });
+  registerAnalyticsRoutes(app, {
+    config,
+    repository,
+    store: analyticsStore,
+    cache: analyticsCache,
+  });
   registerIngestRoutes(app, {
     config,
     buffer: clicks.buffer,
@@ -131,6 +150,34 @@ export function buildServer(
   });
 
   return app;
+}
+
+/**
+ * The analytics store, closed with the server.
+ *
+ * A separate ClickHouse client from the flusher's: this one is read-only, has a
+ * larger connection pool because a dashboard load fans out into three concurrent
+ * queries, and must not be able to exhaust the pool the write path depends on.
+ * Nothing connects until the first query, so building it costs a test nothing.
+ */
+function buildAnalyticsStore(config: Config, app: FastifyInstance): AnalyticsStore {
+  const store = createAnalyticsStore({
+    url: config.CLICKHOUSE_URL,
+    username: config.CLICKHOUSE_USER,
+    password: config.CLICKHOUSE_PASSWORD,
+    database: config.CLICKHOUSE_DATABASE,
+  });
+
+  app.addHook("onClose", async () => {
+    await store.close();
+  });
+
+  return store;
+}
+
+/** Shares the click pipeline's connection, or does without one. */
+function buildAnalyticsCache(redis: Redis | undefined): AnalyticsCache {
+  return redis === undefined ? new NoopAnalyticsCache() : new RedisAnalyticsCache(redis);
 }
 
 /**

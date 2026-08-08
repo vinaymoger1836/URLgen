@@ -90,6 +90,12 @@ const envSchema = z
        should. Local dev sets it in `.env` to keep everything in a single process. */
     CLICK_CONSUMER_ENABLED: booleanFlag.default(false),
 
+    /* Analytics query cache. Also the tick the request clock is floored to, so an
+       answer is at most one tick plus this stale — well inside the flusher's own
+       latency, which is what actually bounds how fresh a click can be. Zero turns
+       storage off without changing any other behaviour. */
+    ANALYTICS_CACHE_TTL_SECONDS: z.coerce.number().int().min(0).max(300).default(15),
+
     SAFE_BROWSING_API_KEY: z.string().min(1).optional(),
     VISITOR_HASH_SALT: z.string().min(16).optional(),
     INTERNAL_API_TOKEN: z.string().min(32).optional(),

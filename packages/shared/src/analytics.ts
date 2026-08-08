@@ -164,14 +164,32 @@ export function resolveAnalyticsWindow(
       : presetBounds(query.range ?? "24h", now, timeZone);
 
   const spanMs = toMs - fromMs;
+  const source = sourceForSpan(spanMs, fromMs, now);
 
   return {
     fromMs,
     toMs,
     timeZone,
-    granularity: granularityForSpan(spanMs),
-    source: sourceForSpan(spanMs, fromMs, now),
+    granularity: clampGranularity(granularityForSpan(spanMs), source),
+    source,
   };
+}
+
+/**
+ * Keeps the bucket size answerable by the chosen table.
+ *
+ * The finest rollup is hourly, so no query against it can produce 15-minute
+ * buckets — it would silently return hour buckets under a 15m label, and the chart
+ * would claim a resolution the data does not have. The two rules cannot currently
+ * disagree (15m needs a span under 12 hours, which is always served from raw), and
+ * that is exactly why this belongs here: the invariant survives someone later
+ * moving one of the thresholds without noticing the other.
+ */
+function clampGranularity(
+  granularity: AnalyticsGranularity,
+  source: AnalyticsSource,
+): AnalyticsGranularity {
+  return source === "rollup" && granularity === "15m" ? "hour" : granularity;
 }
 
 /**

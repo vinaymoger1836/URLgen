@@ -37,6 +37,14 @@ export interface ClickPipeline {
   visitorHasher: VisitorHasher;
   /** Present only when this process is the one configured to flush. */
   flusher: ClickFlusher | undefined;
+  /**
+   * The connection this pipeline opened, for other subsystems to share.
+   *
+   * `undefined` when the buffer was injected — there is no connection, because
+   * opening one nobody asked for would be worse than the caller doing without.
+   * The analytics cache is the only other user, and it degrades to a no-op.
+   */
+  redis: Redis | undefined;
 }
 
 /** Injection points for tests. An override replaces both the object and its lifecycle. */
@@ -95,7 +103,7 @@ export function buildClickPipeline(
     redis?.disconnect();
   });
 
-  return { buffer, visitorHasher, flusher };
+  return { buffer, visitorHasher, flusher, redis };
 }
 
 function buildRedis(host: PipelineHost, config: Config): Redis {

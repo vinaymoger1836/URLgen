@@ -7,19 +7,33 @@ import {
   timeZoneOffsetMs,
   zonedStartOfDay,
   zonedStartOfHour,
+  zonedStartOfInterval,
 } from "./time.js";
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 
 describe("normalizeTimeZone", () => {
-  it("returns the canonical name for a known zone", () => {
-    expect(normalizeTimeZone("Asia/Kolkata")).toBe("Asia/Kolkata");
+  it("returns a usable name for a known zone", () => {
     expect(normalizeTimeZone("UTC")).toBe("UTC");
+    expect(normalizeTimeZone("America/New_York")).toBe("America/New_York");
   });
 
   it("canonicalizes case, which ClickHouse will not do for us", () => {
-    expect(normalizeTimeZone("asia/kolkata")).toBe("Asia/Kolkata");
+    expect(normalizeTimeZone("america/new_york")).toBe("America/New_York");
+  });
+
+  it("may return a legacy alias — canonical is not the same as modern", () => {
+    /* This runtime resolves Asia/Kolkata to Asia/Calcutta, the pre-1993 name that
+       the IANA database still lists as canonical. Both are in the tz database's
+       backward links, so ClickHouse accepts either and the offset is identical —
+       but an equality assertion against the modern spelling would fail here and
+       pass on a runtime with newer ICU. What has to hold is that the output is
+       stable and means the same instant, not that it is spelled the modern way. */
+    const normalized = normalizeTimeZone("Asia/Kolkata") ?? "";
+    expect(normalized).not.toBe("");
+    expect(normalizeTimeZone(normalized)).toBe(normalized);
+    expect(timeZoneOffsetMs(Date.UTC(2026, 6, 1), normalized)).toBe(5 * HOUR + 30 * MINUTE);
   });
 
   it("returns undefined rather than throwing for an unknown zone", () => {
@@ -141,5 +155,22 @@ describe("zonedStartOfHour", () => {
     expect(zonedStartOfHour(Date.UTC(2026, 7, 8, 14, 20), "Asia/Kolkata")).toBe(
       Date.UTC(2026, 7, 8, 13, 30),
     );
+  });
+});
+
+describe("zonedStartOfInterval", () => {
+  it("aligns quarter-hours to the zone", () => {
+    const instant = Date.UTC(2026, 7, 8, 14, 22);
+    expect(zonedStartOfInterval(instant, 900_000, "UTC")).toBe(Date.UTC(2026, 7, 8, 14, 15));
+    /* +05:30 is itself a multiple of 15 minutes, so quarter-hour boundaries land on
+       the same instants — the case that would break is an offset that is not. */
+    expect(zonedStartOfInterval(instant, 900_000, "Asia/Kolkata")).toBe(
+      Date.UTC(2026, 7, 8, 14, 15),
+    );
+  });
+
+  it("produces boundaries that are stable under re-flooring", () => {
+    const start = zonedStartOfInterval(Date.UTC(2026, 7, 8, 14, 22), 900_000, "Asia/Kolkata");
+    expect(zonedStartOfInterval(start, 900_000, "Asia/Kolkata")).toBe(start);
   });
 });
