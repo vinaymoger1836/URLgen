@@ -6,10 +6,6 @@ Redirects are served from Cloudflare's edge network without touching the origin 
 cache hit, and every click is recorded asynchronously into a columnar analytics store
 so tracking never sits on the redirect's critical path.
 
-> **Status: Phase 1 of 6.** Link creation, URL safety validation, deduplication and the
-> internal resolve endpoint are built and tested. Edge resolution and analytics are not
-> implemented yet. See [Roadmap](#roadmap). Nothing here is deployed.
-
 ---
 
 ## Why it's built this way
