@@ -29,6 +29,7 @@ import { DynamoDBDocumentClient, GetCommand } from "@aws-sdk/lib-dynamodb";
 import { urlDedupHash } from "@urlgen/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { DynamoAbuseRepository } from "./abuse-repository.js";
 import { DynamoLinkRepository, toTtlSeconds } from "./dynamo-link-repository.js";
 import { SlugUnavailableError } from "./link-repository.js";
 
@@ -189,4 +190,93 @@ describe.skipIf(endpoint === undefined)("DynamoLinkRepository (integration)", ()
     const fetched = await repository.findBySlug(created.slug);
     expect(fetched?.status).toBe("deleted");
   });
+
+  describe("scanActive, which the Safe Browsing re-scan walks", () => {
+    it("returns active links and skips disabled and deleted ones", async () => {
+      const active = await repository.create({
+        targetUrl: "https://example.com/scan-active",
+        ownerId: "scanner",
+        urlHash: "scan-hash-active",
+        customSlug: "scanactive",
+      });
+      const off = await repository.create({
+        targetUrl: "https://example.com/scan-disabled",
+        ownerId: "scanner",
+        urlHash: "scan-hash-disabled",
+        customSlug: "scanoffx",
+      });
+      await repository.update(off.slug, { status: "disabled" });
+
+      const slugs = await collectScannedSlugs();
+
+      expect(slugs).toContain(active.slug);
+      expect(slugs).not.toContain(off.slug);
+    });
+
+    it("does not choke on the abuse reports that share a link's partition", async () => {
+      /*
+       * The bug this pins, and it only appears once a link has actually been
+       * reported. Reports live under `LINK#<slug>` / `REPORT#…`, so a scan without
+       * `sk = META` in its filter returns them alongside the links — and the record
+       * parser throws on the first one, taking the whole sweep down. The in-memory
+       * fake cannot show this, because it stores links in a Map that reports never
+       * enter.
+       */
+      const link = await repository.create({
+        targetUrl: "https://example.com/scan-reported",
+        ownerId: "scanner",
+        urlHash: "scan-hash-reported",
+        customSlug: "scanreported",
+      });
+
+      const reports = new DynamoAbuseRepository({ client: documentClient, tableName });
+      await reports.record({ slug: link.slug, reason: "phishing", details: "a report" });
+      await reports.record({ slug: link.slug, reason: "malware" });
+
+      const slugs = await collectScannedSlugs();
+
+      expect(slugs).toContain(link.slug);
+      /* One entry per link, not one per row in the partition. */
+      expect(slugs.filter((slug) => slug === link.slug)).toHaveLength(1);
+    });
+
+    it("keeps paging while a cursor remains, even across a page the filter emptied", async () => {
+      /*
+       * `Limit` bounds items *examined*, not items returned, so a filtered scan can
+       * legitimately hand back a short page — or none at all — and still have more
+       * to give. Stopping on an empty page would silently skip links.
+       */
+      for (let index = 0; index < 6; index += 1) {
+        await repository.create({
+          targetUrl: `https://example.com/paged-${String(index)}`,
+          ownerId: "pager",
+          urlHash: `paged-hash-${String(index)}`,
+          customSlug: `paged${String(index)}x`,
+        });
+      }
+
+      const slugs = await collectScannedSlugs(1);
+
+      for (let index = 0; index < 6; index += 1) {
+        expect(slugs).toContain(`paged${String(index)}x`);
+      }
+    });
+  });
+
+  /** Walks every page the way the re-scan does, and returns the slugs it saw. */
+  async function collectScannedSlugs(limit = 25): Promise<string[]> {
+    const slugs: string[] = [];
+    let cursor: string | undefined;
+
+    do {
+      const page = await repository.scanActive({
+        limit,
+        ...(cursor !== undefined ? { cursor } : {}),
+      });
+      slugs.push(...page.items.map((item) => item.slug));
+      cursor = page.cursor;
+    } while (cursor !== undefined);
+
+    return slugs;
+  }
 });

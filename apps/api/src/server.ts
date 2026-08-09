@@ -6,7 +6,11 @@
  */
 
 import { ERROR_STATUS, apiError } from "@urlgen/shared";
-import Fastify, { type FastifyInstance, type FastifyServerOptions } from "fastify";
+import Fastify, {
+  type FastifyInstance,
+  type FastifyRequest,
+  type FastifyServerOptions,
+} from "fastify";
 import type { Redis } from "ioredis";
 import { ZodError } from "zod";
 
@@ -64,14 +68,25 @@ export interface ServerDependencies extends ClickPipelineOverrides {
   rateLimiter: RateLimiter;
   abuseRepository: AbuseRepository;
   abuseQueue: AbuseQueue;
+  /**
+   * Where the logger writes.
+   *
+   * Exists so a test can assert over the bytes that were actually emitted. What
+   * reaches the log is a privacy property here, not a formatting detail, so it has
+   * to be checked against real output rather than against the config meant to
+   * produce it.
+   */
+  loggerDestination: NodeJS.WritableStream;
 }
 
-/** Headers that may carry a credential and must never reach the logs. */
+/** Headers that may carry a credential or an address, and must never reach the logs. */
 const REDACTED_HEADERS = [
   'req.headers["authorization"]',
   'req.headers["cookie"]',
   'req.headers["x-internal-token"]',
+  'req.headers["x-admin-token"]',
   'req.headers["cf-connecting-ip"]',
+  'req.headers["x-forwarded-for"]',
 ];
 
 export function buildServer(
@@ -79,7 +94,7 @@ export function buildServer(
   overrides: Partial<ServerDependencies> = {},
 ): FastifyInstance {
   const app = Fastify({
-    logger: buildLoggerOptions(config),
+    logger: buildLoggerOptions(config, overrides.loggerDestination),
     /*
      * Trust exactly the proxies that were configured, and nothing when none were.
      *
@@ -310,11 +325,38 @@ function statusCodeOf(error: unknown): number {
 }
 
 /**
+ * Logs a request without its address.
+ *
+ * Fastify's default `req` serializer includes `remoteAddress` and `remotePort`.
+ * That was harmless while `request.ip` was the socket peer — which, behind
+ * Cloudflare, is Cloudflare. It stops being harmless the moment `TRUSTED_PROXIES`
+ * is configured for production, because `remoteAddress` then resolves to the
+ * **visitor's real address** and every request line in the log becomes a stored IP.
+ *
+ * That would quietly undo the property Phase 3 built the whole visitor-hash scheme
+ * to guarantee: the address exists for the duration of one function call and is
+ * never written down. Redacting `cf-connecting-ip` from the headers closed the
+ * front door; this closes the one next to it.
+ */
+function serializeRequest(request: FastifyRequest): Record<string, unknown> {
+  return {
+    method: request.method,
+    url: request.url,
+    /* Kept because it is the field that actually correlates a request across log
+       lines, and it identifies nobody. */
+    id: request.id,
+  };
+}
+
+/**
  * Returns a non-optional type on purpose: under `exactOptionalPropertyTypes`, a
  * `| undefined` here makes the `Fastify()` call fall through to its HTTP/2
  * overload, and every downstream type quietly goes wrong.
  */
-function buildLoggerOptions(config: Config): NonNullable<FastifyServerOptions["logger"]> {
+function buildLoggerOptions(
+  config: Config,
+  destination: NodeJS.WritableStream | undefined,
+): NonNullable<FastifyServerOptions["logger"]> {
   if (config.NODE_ENV === "test") {
     return false;
   }
@@ -322,7 +364,14 @@ function buildLoggerOptions(config: Config): NonNullable<FastifyServerOptions["l
   const base = {
     level: config.LOG_LEVEL,
     redact: { paths: REDACTED_HEADERS, remove: true },
+    serializers: { req: serializeRequest },
   };
+
+  /* A supplied destination wins over the pretty transport: a transport runs in a
+     worker thread and writes where it likes, so the two cannot be combined. */
+  if (destination !== undefined) {
+    return { ...base, stream: destination };
+  }
 
   if (config.NODE_ENV === "development") {
     return {
