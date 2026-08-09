@@ -55,6 +55,9 @@ export function secretsMatch(provided: string, expected: string): boolean {
 /** Header the Worker authenticates its service-to-service calls with. */
 export const INTERNAL_TOKEN_HEADER = "x-internal-token";
 
+/** Header the abuse-review endpoints are authenticated with. */
+export const ADMIN_TOKEN_HEADER = "x-admin-token";
+
 export type InternalAuthResult = "ok" | "not-configured" | "invalid";
 
 /**
@@ -72,12 +75,35 @@ export function verifyInternalToken(
   request: FastifyRequest,
   expectedToken: string | undefined,
 ): InternalAuthResult {
+  return verifyToken(request, INTERNAL_TOKEN_HEADER, expectedToken);
+}
+
+/**
+ * Authenticates an abuse-review call.
+ *
+ * Same comparison as the Worker's, different header, so a leaked internal token
+ * cannot be replayed against the admin surface and vice versa. One credential
+ * doing both jobs is how a service-to-service secret ends up granting
+ * administrative rights.
+ */
+export function verifyAdminToken(
+  request: FastifyRequest,
+  expectedToken: string | undefined,
+): InternalAuthResult {
+  return verifyToken(request, ADMIN_TOKEN_HEADER, expectedToken);
+}
+
+function verifyToken(
+  request: FastifyRequest,
+  header: string,
+  expectedToken: string | undefined,
+): InternalAuthResult {
   if (expectedToken === undefined) {
     return "not-configured";
   }
 
-  const header = request.headers[INTERNAL_TOKEN_HEADER];
-  const provided = Array.isArray(header) ? header[0] : header;
+  const raw = request.headers[header];
+  const provided = Array.isArray(raw) ? raw[0] : raw;
 
   if (typeof provided !== "string" || !secretsMatch(provided, expectedToken)) {
     return "invalid";

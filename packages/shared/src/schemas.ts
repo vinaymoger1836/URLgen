@@ -75,6 +75,9 @@ export const createLinkRequestSchema = z.object({
   expiresAt: timestampSchema.optional(),
 });
 
+/** What Google's Safe Browsing lookup concluded. `unknown` includes "never asked". */
+export const safeBrowsingVerdictSchema = z.enum(["safe", "malicious", "unknown"]);
+
 export const linkRecordSchema = z.object({
   slug: z.string(),
   targetUrl: z.string(),
@@ -87,6 +90,16 @@ export const linkRecordSchema = z.object({
   clickCount: z.number().int().nonnegative(),
   /** Set when the target hostname is internationalized — surfaced for abuse review. */
   punycode: z.boolean().optional(),
+  /**
+   * The last verdict, and when it was reached.
+   *
+   * Stored rather than only acted on, because a URL that was clean at creation can
+   * stop being clean — so the re-scan needs to know which links it has looked at
+   * recently, and an operator reviewing a report needs to know what the automated
+   * check already thought. Absent on links created before this existed.
+   */
+  safeBrowsingVerdict: safeBrowsingVerdictSchema.optional(),
+  verdictCheckedAt: timestampSchema.optional(),
 });
 
 /**
@@ -99,8 +112,19 @@ export const linkRecordSchema = z.object({
  */
 export const linkSummarySchema = linkRecordSchema.omit({ urlHash: true });
 
-/** What the API returns to a caller: the record minus internal bookkeeping. */
-export const linkResponseSchema = linkSummarySchema;
+/**
+ * What the API returns to a caller: the record minus internal bookkeeping.
+ *
+ * The Safe Browsing fields are dropped here rather than surfaced. They are an
+ * operational signal — how recently the re-scan looked at a link, and what it
+ * concluded — and publishing them would let anyone with a link probe the scanner's
+ * coverage: which URLs have been checked, how stale the check is, and by
+ * inference which destinations are worth trying before the next sweep.
+ */
+export const linkResponseSchema = linkSummarySchema.omit({
+  safeBrowsingVerdict: true,
+  verdictCheckedAt: true,
+});
 
 /**
  * A link as it goes over the wire, including the fields only the API can supply.
@@ -204,3 +228,4 @@ export type LinkApiResponse = z.infer<typeof linkApiResponseSchema>;
 export type LinkListResponse = z.infer<typeof linkListResponseSchema>;
 export type LinkStatus = z.infer<typeof linkStatusSchema>;
 export type KvLinkValue = z.infer<typeof kvLinkValueSchema>;
+export type SafeBrowsingVerdictValue = z.infer<typeof safeBrowsingVerdictSchema>;

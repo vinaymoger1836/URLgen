@@ -17,7 +17,9 @@ import {
   type CreateLinkInput,
   type LinkPage,
   type LinkRepository,
+  type LinkScanPage,
   type ListLinksOptions,
+  type ScanLinksOptions,
   type UpdateLinkPatch,
 } from "./link-repository.js";
 
@@ -81,6 +83,12 @@ export class InMemoryLinkRepository implements LinkRepository {
       ...(patch.targetUrl !== undefined ? { targetUrl: patch.targetUrl } : {}),
       ...(patch.urlHash !== undefined ? { urlHash: patch.urlHash } : {}),
       ...(patch.status !== undefined ? { status: patch.status } : {}),
+      ...(patch.safeBrowsingVerdict !== undefined
+        ? { safeBrowsingVerdict: patch.safeBrowsingVerdict }
+        : {}),
+      ...(patch.verdictCheckedAt !== undefined
+        ? { verdictCheckedAt: patch.verdictCheckedAt }
+        : {}),
       ...(patch.expiresAt !== undefined && patch.expiresAt !== null
         ? { expiresAt: patch.expiresAt }
         : {}),
@@ -121,6 +129,20 @@ export class InMemoryLinkRepository implements LinkRepository {
     });
   }
 
+  public scanActive(options: ScanLinksOptions = {}): Promise<LinkScanPage> {
+    const active = [...this.#records.values()].filter((record) => record.status === "active");
+
+    const limit = options.limit ?? 25;
+    const start = options.cursor === undefined ? 0 : Number(options.cursor);
+    const page = active.slice(start, start + limit);
+    const nextIndex = start + page.length;
+
+    return Promise.resolve({
+      items: page,
+      ...(nextIndex < active.length ? { cursor: String(nextIndex) } : {}),
+    });
+  }
+
   /** Test helper: seed a record directly. */
   public seed(record: LinkRecord): void {
     this.#records.set(record.slug, record);
@@ -143,6 +165,9 @@ export class InMemoryLinkRepository implements LinkRepository {
       clickCount: 0,
       ...(input.expiresAt !== undefined ? { expiresAt: input.expiresAt } : {}),
       ...(input.punycode === true ? { punycode: true } : {}),
+      ...(input.safeBrowsingVerdict !== undefined
+        ? { safeBrowsingVerdict: input.safeBrowsingVerdict, verdictCheckedAt: timestamp }
+        : {}),
     };
     this.#records.set(slug, record);
     return record;

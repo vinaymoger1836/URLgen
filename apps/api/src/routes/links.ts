@@ -24,7 +24,9 @@ import {
   shortUrlFor,
   toKvLinkValue,
 } from "../http/helpers.js";
+import { clientIp, enforceRateLimit } from "../http/rate-limit.js";
 import type { EdgeCache } from "../repositories/edge-cache.js";
+import type { RateLimiter } from "../repositories/rate-limiter.js";
 import {
   LinkNotFoundError,
   SlugAllocationError,
@@ -59,13 +61,41 @@ export interface LinkRoutesOptions {
   repository: LinkRepository;
   safetyChecker: UrlSafetyChecker;
   edgeCache: EdgeCache;
+  rateLimiter: RateLimiter;
 }
 
 export function registerLinkRoutes(app: FastifyInstance, options: LinkRoutesOptions): void {
-  const { config, repository, safetyChecker, edgeCache } = options;
+  const { config, repository, safetyChecker, edgeCache, rateLimiter } = options;
   const ownHosts = [config.SHORT_DOMAIN];
 
   app.post("/api/links", async (request, reply) => {
+    /* Limits run before anything else in the handler — before validation, before
+       the safety assessment, and well before the two DynamoDB round trips and the
+       outbound Safe Browsing call further down. A limiter that only refuses after
+       the expensive work is a limiter that still lets an attacker spend the
+       resource it was protecting. */
+    const withinLimits = await enforceRateLimit(request, reply, rateLimiter, [
+      {
+        dimension: "create:ip",
+        identity: clientIp(request),
+        rule: {
+          limit: config.RATE_LIMIT_CREATE_PER_IP,
+          windowMs: config.RATE_LIMIT_CREATE_PER_IP_WINDOW_SECONDS * 1000,
+        },
+      },
+      {
+        dimension: "create:owner",
+        identity: resolveOwnerId(request),
+        rule: {
+          limit: config.RATE_LIMIT_CREATE_PER_OWNER,
+          windowMs: config.RATE_LIMIT_CREATE_PER_OWNER_WINDOW_SECONDS * 1000,
+        },
+      },
+    ]);
+    if (!withinLimits) {
+      return reply;
+    }
+
     /* The URL is assessed BEFORE the request schema runs. Both layers can reject a
        `javascript:` URL, but only the assessment knows *why*; letting Zod fail first
        would collapse every URL problem into a generic `invalid_request`. Zod stays
@@ -88,7 +118,8 @@ export function registerLinkRoutes(app: FastifyInstance, options: LinkRoutesOpti
       return sendError(reply, "invalid_request", "expiresAt must be in the future");
     }
 
-    if ((await safetyChecker.check(url)) === "malicious") {
+    const verdict = await safetyChecker.check(url);
+    if (verdict === "malicious") {
       request.log.warn({ host: assessment?.hostname }, "safe browsing rejected a target url");
       return sendError(reply, "unsafe_url", "That destination was flagged as unsafe");
     }
@@ -114,6 +145,9 @@ export function registerLinkRoutes(app: FastifyInstance, options: LinkRoutesOpti
         ...(customSlug !== undefined ? { customSlug } : {}),
         ...(expiresAt !== undefined ? { expiresAt } : {}),
         ...(assessment?.punycode === true ? { punycode: true } : {}),
+        /* Recorded rather than only acted on, so the re-scan can tell a link that
+           has never been looked at from one checked five minutes ago. */
+        safeBrowsingVerdict: verdict,
       });
 
       /* Warm the edge on create rather than waiting for the first visitor to take
@@ -189,10 +223,16 @@ export function registerLinkRoutes(app: FastifyInstance, options: LinkRoutesOpti
           return sendError(reply, ISSUE_TO_ERROR[issue], ISSUE_MESSAGE[issue]);
         }
       }
-      if ((await safetyChecker.check(parsed.data.url)) === "malicious") {
+      const verdict = await safetyChecker.check(parsed.data.url);
+      if (verdict === "malicious") {
         return sendError(reply, "unsafe_url", "That destination was flagged as unsafe");
       }
       patch.targetUrl = parsed.data.url;
+      /* The verdict belongs to the URL, not the link, so changing one has to
+         change the other — otherwise a link edited to a new destination keeps the
+         old destination's clean verdict and the re-scan skips it as fresh. */
+      patch.safeBrowsingVerdict = verdict;
+      patch.verdictCheckedAt = new Date().toISOString();
       /* The dedup key must follow the URL, or the index would keep pointing at the
          old destination and a later create would dedup against a stale entry. */
       patch.urlHash = await urlDedupHash(parsed.data.url, ownerId);

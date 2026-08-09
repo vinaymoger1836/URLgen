@@ -16,6 +16,7 @@ import {
   GetCommand,
   PutCommand,
   QueryCommand,
+  ScanCommand,
   UpdateCommand,
   type DynamoDBDocumentClient,
 } from "@aws-sdk/lib-dynamodb";
@@ -34,7 +35,9 @@ import {
   type CreateLinkInput,
   type LinkPage,
   type LinkRepository,
+  type LinkScanPage,
   type ListLinksOptions,
+  type ScanLinksOptions,
   type UpdateLinkPatch,
 } from "./link-repository.js";
 
@@ -151,6 +154,16 @@ export class DynamoLinkRepository implements LinkRepository {
       names["#status"] = "status"; // reserved word in DynamoDB
       values[":status"] = patch.status;
     }
+    if (patch.safeBrowsingVerdict !== undefined) {
+      sets.push("#verdict = :verdict");
+      names["#verdict"] = "safeBrowsingVerdict";
+      values[":verdict"] = patch.safeBrowsingVerdict;
+    }
+    if (patch.verdictCheckedAt !== undefined) {
+      sets.push("#verdictCheckedAt = :verdictCheckedAt");
+      names["#verdictCheckedAt"] = "verdictCheckedAt";
+      values[":verdictCheckedAt"] = patch.verdictCheckedAt;
+    }
     if (patch.expiresAt === null) {
       removes.push("#expiresAt", "#ttl");
       names["#expiresAt"] = "expiresAt";
@@ -229,6 +242,41 @@ export class DynamoLinkRepository implements LinkRepository {
     };
   }
 
+  /**
+   * Pages through active links for the re-scan.
+   *
+   * Two filters, and the first one is the one that would have been forgotten:
+   * `sk = META` excludes abuse reports, which share the link's partition. Without
+   * it a scan returns report items too, and `toLinkRecord` throws on the first one
+   * — a failure that only appears once a link has actually been reported.
+   *
+   * `Limit` bounds *items examined*, not items returned, so a filtered scan can
+   * legitimately come back with fewer rows than asked for — or none at all — and
+   * still have a cursor. The caller must page until the cursor is gone rather than
+   * stopping on an empty page.
+   */
+  public async scanActive(options: ScanLinksOptions = {}): Promise<LinkScanPage> {
+    const result = await this.#client.send(
+      new ScanCommand({
+        TableName: this.#tableName,
+        FilterExpression: "sk = :meta AND #status = :active",
+        ExpressionAttributeNames: { "#status": "status" },
+        ExpressionAttributeValues: { ":meta": SORT_KEY, ":active": "active" },
+        Limit: Math.min(options.limit ?? DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE),
+        ...(options.cursor !== undefined
+          ? { ExclusiveStartKey: decodeCursor(options.cursor) }
+          : {}),
+      }),
+    );
+
+    return {
+      items: (result.Items ?? []).map((item) => toLinkRecord(item)),
+      ...(result.LastEvaluatedKey !== undefined
+        ? { cursor: encodeCursor(result.LastEvaluatedKey) }
+        : {}),
+    };
+  }
+
   #buildRecord(input: CreateLinkInput, slug: string): LinkRecord {
     const timestamp = this.#now().toISOString();
     return {
@@ -242,6 +290,9 @@ export class DynamoLinkRepository implements LinkRepository {
       clickCount: 0,
       ...(input.expiresAt !== undefined ? { expiresAt: input.expiresAt } : {}),
       ...(input.punycode === true ? { punycode: true } : {}),
+      ...(input.safeBrowsingVerdict !== undefined
+        ? { safeBrowsingVerdict: input.safeBrowsingVerdict, verdictCheckedAt: timestamp }
+        : {}),
     };
   }
 

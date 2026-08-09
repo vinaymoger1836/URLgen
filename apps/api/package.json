@@ -13,7 +13,8 @@
     "test": "vitest run",
     "table:create": "tsx --env-file-if-exists=../../.env scripts/create-table.ts",
     "consumer": "tsx --env-file-if-exists=../../.env src/consumer/index.ts",
-    "clickhouse:create": "tsx --env-file-if-exists=../../.env scripts/create-clickhouse-schema.ts"
+    "clickhouse:create": "tsx --env-file-if-exists=../../.env scripts/create-clickhouse-schema.ts",
+    "rescan": "tsx --env-file-if-exists=../../.env scripts/rescan-links.ts"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "3.1101.0",

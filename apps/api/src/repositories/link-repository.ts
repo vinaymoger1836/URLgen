@@ -6,7 +6,7 @@
  * and other vendor details from leaking into HTTP handling.
  */
 
-import type { LinkRecord, LinkStatus, LinkSummary } from "@urlgen/shared";
+import type { LinkRecord, LinkStatus, LinkSummary, SafeBrowsingVerdictValue } from "@urlgen/shared";
 
 export interface CreateLinkInput {
   targetUrl: string;
@@ -16,6 +16,8 @@ export interface CreateLinkInput {
   customSlug?: string;
   expiresAt?: string;
   punycode?: boolean;
+  /** The verdict reached at creation, so the re-scan knows this link was checked. */
+  safeBrowsingVerdict?: SafeBrowsingVerdictValue;
 }
 
 export interface UpdateLinkPatch {
@@ -24,6 +26,8 @@ export interface UpdateLinkPatch {
   expiresAt?: string | null;
   status?: LinkStatus;
   urlHash?: string;
+  safeBrowsingVerdict?: SafeBrowsingVerdictValue;
+  verdictCheckedAt?: string;
 }
 
 export interface ListLinksOptions {
@@ -42,6 +46,23 @@ export interface LinkPage {
   cursor?: string;
 }
 
+export interface ScanLinksOptions {
+  limit?: number;
+  cursor?: string;
+}
+
+/**
+ * A page of whole records, as only a table scan can produce.
+ *
+ * Distinct from `LinkPage` because that one is deliberately `LinkSummary[]`: the
+ * owner index is projected and cannot deliver `urlHash`. A scan reads the table
+ * itself, so it has every attribute — including the ones the re-scan needs.
+ */
+export interface LinkScanPage {
+  items: LinkRecord[];
+  cursor?: string;
+}
+
 export interface LinkRepository {
   create(input: CreateLinkInput): Promise<LinkRecord>;
   findBySlug(slug: string): Promise<LinkRecord | undefined>;
@@ -51,6 +72,17 @@ export interface LinkRepository {
   /** Soft delete — the row survives so the slug is never recycled. */
   softDelete(slug: string): Promise<void>;
   listByOwner(ownerId: string, options?: ListLinksOptions): Promise<LinkPage>;
+  /**
+   * Every active link, a page at a time, in no meaningful order.
+   *
+   * Exists for the Safe Browsing re-scan and nothing else. It is a table scan and
+   * it is on the interface anyway, because the alternative — a third GSI keyed on
+   * status and last-checked time — would have to be provisioned out of the same
+   * account-wide 25 WCU the table and its two existing indexes already divide
+   * exactly. A scan run on a schedule, off the request path, at free-tier row
+   * counts, is the cheaper answer.
+   */
+  scanActive(options?: ScanLinksOptions): Promise<LinkScanPage>;
 }
 
 /** A custom slug was requested but is already in use. */
