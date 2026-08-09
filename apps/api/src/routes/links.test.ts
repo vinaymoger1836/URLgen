@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { loadConfig } from "../config.js";
 import { EdgeCacheError, type EdgeCache } from "../repositories/edge-cache.js";
 import { InMemoryLinkRepository } from "../repositories/in-memory-link-repository.js";
+import { InMemoryRateLimiter } from "../repositories/rate-limiter.js";
 import { buildServer } from "../server.js";
 import type { SafeBrowsingVerdict, UrlSafetyChecker } from "../services/safe-browsing.js";
 
@@ -57,6 +58,20 @@ beforeEach(async () => {
     linkRepository: repository,
     urlSafetyChecker: checker,
     edgeCache,
+    /*
+     * Injected for two separate reasons, both of which bit on the way in.
+     *
+     * Without it these tests reach for the *real* Redis limiter, because the
+     * click pipeline builds a connection whenever no buffer is injected — so
+     * every create waited out the 2s command timeout against a Redis nobody
+     * started, and the file went from seconds to two minutes.
+     *
+     * And with a Redis actually running they would have failed differently and
+     * more confusingly: every request in this file arrives from 127.0.0.1, so
+     * the whole file shares one per-IP window and the 21st create in it would
+     * 429. A fresh limiter per test is what makes each test independent.
+     */
+    rateLimiter: new InMemoryRateLimiter(),
   });
   await app.ready();
 });
