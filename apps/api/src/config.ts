@@ -14,6 +14,7 @@ import { z } from "zod";
 
 /** Keys whose values must never be logged, echoed in an error, or serialized. */
 const SECRET_KEYS = [
+  "ADMIN_API_TOKEN",
   "AWS_SECRET_ACCESS_KEY",
   "CLICKHOUSE_PASSWORD",
   "CLOUDFLARE_API_TOKEN",
