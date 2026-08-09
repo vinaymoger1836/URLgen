@@ -117,9 +117,62 @@ const envSchema = z
        storage off without changing any other behaviour. */
     ANALYTICS_CACHE_TTL_SECONDS: z.coerce.number().int().min(0).max(300).default(15),
 
+    /* Rate limiting. The per-IP window is short and tight because a burst from one
+       address is what abuse looks like; the per-owner window is long and loose
+       because a legitimate owner shortening a batch of links should not trip it in
+       the first minute and then be locked out for the rest of the hour. Both must
+       pass, so the effective limit is whichever runs out first. */
+    RATE_LIMIT_ENABLED: booleanFlag.default(true),
+    RATE_LIMIT_CREATE_PER_IP: z.coerce.number().int().min(1).max(100_000).default(20),
+    RATE_LIMIT_CREATE_PER_IP_WINDOW_SECONDS: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(86_400)
+      .default(60),
+    RATE_LIMIT_CREATE_PER_OWNER: z.coerce.number().int().min(1).max(100_000).default(100),
+    RATE_LIMIT_CREATE_PER_OWNER_WINDOW_SECONDS: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(86_400)
+      .default(3_600),
+    RATE_LIMIT_REPORT_PER_IP: z.coerce.number().int().min(1).max(100_000).default(10),
+    RATE_LIMIT_REPORT_PER_IP_WINDOW_SECONDS: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(86_400)
+      .default(300),
+
+    /*
+     * Proxies whose `X-Forwarded-For` may be believed, as IPs or CIDRs.
+     *
+     * Unset means trust nothing, and that is the safe default: with blanket proxy
+     * trust, any client that can reach the origin directly picks its own client IP
+     * by setting a header, and every per-IP limit below becomes decorative. In
+     * production this is the list of Cloudflare's ranges — or, better, the origin
+     * is only reachable through Cloudflare at all and this stays empty.
+     */
+    TRUSTED_PROXIES: z
+      .string()
+      .optional()
+      .transform((value) =>
+        value === undefined
+          ? []
+          : value
+              .split(",")
+              .map((entry) => entry.trim())
+              .filter((entry) => entry.length > 0),
+      ),
+
     SAFE_BROWSING_API_KEY: z.string().min(1).optional(),
     VISITOR_HASH_SALT: z.string().min(16).optional(),
     INTERNAL_API_TOKEN: z.string().min(32).optional(),
+    /* Authenticates the abuse-review endpoints. Absent means they are not mounted
+       at all — an admin surface with no credential configured is worse than no
+       admin surface, because it looks like it is protected. */
+    ADMIN_API_TOKEN: z.string().min(32).optional(),
 
     /* Edge cache invalidation. Absent locally: `wrangler dev` simulates its own
        KV namespace, so there is nothing at api.cloudflare.com to invalidate. */
