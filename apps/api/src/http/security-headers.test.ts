@@ -86,7 +86,7 @@ describe("caching of owner-scoped responses", () => {
       headers: { "x-owner-id": "alice", origin: "http://localhost:3000" },
     });
 
-    const vary = String(response.headers["vary"]);
+    const vary = String(response.headers.vary);
     expect(vary).toContain("Origin");
     expect(vary).toContain("x-owner-id");
   });

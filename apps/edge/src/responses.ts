@@ -6,10 +6,33 @@
  * branches.
  */
 
+/**
+ * Applied to everything the Worker emits.
+ *
+ * `frame-ancestors 'none'` (and its older spelling) matters more here than it
+ * looks: the terminal pages are the only HTML this system serves from the short
+ * domain, and a short domain framed inside somebody else's page is the setup for
+ * making a hostile site look like it is ours.
+ *
+ * `referrer-policy` stays `strict-origin-when-cross-origin` rather than the API's
+ * `no-referrer`, because this one is attached to a **redirect**: the destination
+ * legitimately gets to know it received traffic from the short domain, and
+ * stripping that entirely breaks the referrer analytics of every site anyone
+ * shortens a link to. The origin-only form sends the domain and never the slug.
+ */
 const SECURITY_HEADERS: Readonly<Record<string, string>> = {
   "x-content-type-options": "nosniff",
   "referrer-policy": "strict-origin-when-cross-origin",
+  "x-frame-options": "DENY",
 };
+
+/**
+ * The terminal pages carry one inline `<style>` and nothing else — no script, no
+ * external asset, no form — so the policy is "none" with a single exception, which
+ * is exactly as much as the page needs and no more.
+ */
+const PAGE_CSP =
+  "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
 /**
  * Sends the visitor onward.
@@ -89,6 +112,7 @@ export function errorPage(kind: ErrorPageKind): Response {
     headers: {
       "content-type": "text/html; charset=utf-8",
       "cache-control": spec.maxAge > 0 ? `public, max-age=${spec.maxAge}` : "no-store",
+      "content-security-policy": PAGE_CSP,
       ...SECURITY_HEADERS,
     },
   });

@@ -255,7 +255,7 @@ describe("POST /admin/links/:slug/enable", () => {
 });
 
 describe("the KV key the edge reads", () => {
-  it("is the one both sides agree on", async () => {
+  it("is the one both sides agree on", () => {
     /* Cheap assertion, but the edge and the origin computing this differently is a
        failure that looks like "the cache just never hits". */
     expect(kvLinkKey("badlink")).toBe("l:badlink");

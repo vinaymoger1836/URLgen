@@ -38,7 +38,7 @@
 
 import { randomUUID } from "node:crypto";
 
-import { Redis, type Result } from "ioredis";
+import type { Redis, Result } from "ioredis";
 
 /** One limit: how many requests, over how long a trailing window. */
 export interface RateLimitRule {

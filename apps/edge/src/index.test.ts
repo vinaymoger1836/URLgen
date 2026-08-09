@@ -592,3 +592,58 @@ describe("click tracking", () => {
     expect(trackedEvents()[0]?.userAgent).toHaveLength(MAX_USER_AGENT_LENGTH);
   });
 });
+
+describe("security headers at the edge", () => {
+  it("sends nosniff and a frame denial on a redirect", async () => {
+    forbidOrigin();
+    const slug = await seed();
+
+    const response = await get(`/${slug}`);
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(response.headers.get("x-frame-options")).toBe("DENY");
+  });
+
+  it("locks down the terminal HTML page with a policy that still permits its own inline style", async () => {
+    forbidOrigin();
+
+    const response = await get("/wp-login.php");
+    const csp = response.headers.get("content-security-policy") ?? "";
+
+    expect(response.status).toBe(404);
+    expect(csp).toContain("default-src 'none'");
+    expect(csp).toContain("frame-ancestors 'none'");
+    /* The page renders one inline <style> and nothing else — omitting this would
+       ship a policy that blocks the page's own presentation. */
+    expect(csp).toContain("style-src 'unsafe-inline'");
+    expect(csp).not.toContain("script-src");
+  });
+
+  it("keeps the referrer at origin granularity on a redirect, never the full short URL", async () => {
+    /* Not `no-referrer` like the API: the destination legitimately learns it was
+       reached from the short domain, and stripping that breaks the referrer
+       analytics of every site anyone shortens a link to. What it must never leak
+       is the slug, which is the path. */
+    forbidOrigin();
+    const slug = await seed();
+
+    const response = await get(`/${slug}`);
+
+    expect(response.headers.get("referrer-policy")).toBe("strict-origin-when-cross-origin");
+  });
+
+  it("never echoes the requested path back into the error page", async () => {
+    /* The page is assembled from a closed record of specs, so there is no
+       interpolation point for a caller-supplied string — which is what makes the
+       HTML safe rather than the escaping being correct. */
+    forbidOrigin();
+
+    const response = await get("/%3Cscript%3Ealert(1)%3C%2Fscript%3E");
+    const body = await response.text();
+
+    expect(response.status).toBe(404);
+    expect(body).not.toContain("script>alert");
+    expect(body).not.toContain("%3Cscript");
+  });
+});
