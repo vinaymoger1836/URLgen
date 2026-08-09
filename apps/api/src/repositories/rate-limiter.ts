@@ -164,10 +164,10 @@ export class RedisRateLimiter implements RateLimiter {
  * A limiter that keeps its windows in process memory.
  *
  * Correct for a single process and used by the route tests, which need real
- * limiting behaviour without a Redis. It is deliberately *not* the production
- * fallback for a Redis outage — see `fail-open.ts`-style reasoning in
- * `rate-limit.ts`: a per-process limiter behind N replicas silently multiplies
- * every limit by N, which is a worse lie than admitting the limiter is down.
+ * limiting behaviour without a Redis. It is deliberately *not* what a Redis
+ * outage falls back to: behind N replicas a per-process limiter multiplies every
+ * limit by N while still reporting the configured number in its headers, which is
+ * a worse failure than the honest one in `rate-limit.ts`.
  */
 export class InMemoryRateLimiter implements RateLimiter {
   readonly #windows = new Map<string, number[]>();
